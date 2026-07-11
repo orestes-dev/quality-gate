@@ -3,8 +3,8 @@
 // diff-based, so a re-run in the correct state writes nothing and the label
 // triggers do not loop.
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   validate,
@@ -12,8 +12,8 @@ import {
   hasOverrideRationale,
   failures,
   warnings,
-} from './validator.js';
-import { renderComment } from './report.js';
+} from "./validator.js";
+import { renderComment } from "./report.js";
 import {
   LABEL,
   LABEL_META,
@@ -21,8 +21,8 @@ import {
   COMMENT_MARKER,
   OVERRIDE_LABEL,
   OVERRIDE_HEADING,
-} from './schema.js';
-import { GitHub } from './github.js';
+} from "./schema.js";
+import { GitHub } from "./github.js";
 
 /** @typedef {import('./validator.js').Scorecard} Scorecard */
 
@@ -34,7 +34,7 @@ const ALL_QUALITY_LABELS = [LABEL.FAILING, LABEL.WARNING, LABEL.PASS];
  * @returns {boolean}
  */
 const isGateComment = (c) =>
-  c.user?.type === 'Bot' && c.body?.includes(COMMENT_MARKER);
+  c.user?.type === "Bot" && c.body?.includes(COMMENT_MARKER);
 
 /**
  * Load the webhook event payload from `GITHUB_EVENT_PATH`.
@@ -43,8 +43,8 @@ const isGateComment = (c) =>
  */
 function loadEvent() {
   const path = process.env.GITHUB_EVENT_PATH;
-  if (!path) throw new Error('GITHUB_EVENT_PATH is not set.');
-  return JSON.parse(readFileSync(path, 'utf8'));
+  if (!path) throw new Error("GITHUB_EVENT_PATH is not set.");
+  return JSON.parse(readFileSync(path, "utf8"));
 }
 
 /**
@@ -114,13 +114,13 @@ async function syncComment(gh, issueNumber, result) {
  */
 export async function run({ gh, event }) {
   const eventIssue = event.issue;
-  if (!eventIssue) throw new Error('Event payload has no issue.');
+  if (!eventIssue) throw new Error("Event payload has no issue.");
 
   // Fetch fresh: the event payload's body/labels can be stale.
   const issue = await gh.getIssue(eventIssue.number);
-  const body = issue.body || '';
+  const body = issue.body || "";
   const currentLabels = (issue.labels || []).map((l) =>
-    typeof l === 'string' ? l : l.name,
+    typeof l === "string" ? l : l.name,
   );
 
   // Manual override: label plus a written rationale bypasses the gate.
@@ -135,8 +135,8 @@ export async function run({ gh, event }) {
   // Override signalled but incomplete: nudge the author, as a warning line.
   if (currentLabels.includes(OVERRIDE_LABEL) && !hasOverrideRationale(body)) {
     result.checks.push({
-      key: 'override',
-      label: 'Override',
+      key: "override",
+      label: "Override",
       status: STATUS.WARN,
       message: `\`${OVERRIDE_LABEL}\` is set but there is no \`## ${OVERRIDE_HEADING}\` section; the gate still applies`,
     });
@@ -162,7 +162,7 @@ export async function run({ gh, event }) {
  * @returns {Promise<void>}
  */
 async function main() {
-  const [owner, repo] = (process.env.GITHUB_REPOSITORY || '').split('/');
+  const [owner, repo] = (process.env.GITHUB_REPOSITORY || "").split("/");
   const gh = new GitHub({
     token: process.env.GITHUB_TOKEN,
     apiUrl: process.env.GITHUB_API_URL,

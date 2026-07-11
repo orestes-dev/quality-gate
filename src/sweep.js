@@ -2,8 +2,8 @@
 // A single server-side search query filters to exactly those, so a swept issue
 // drops out on the next run; re-running drains a backlog past the 1000-result cap.
 
-import { LABEL } from './schema.js';
-import { run } from './action.js';
+import { LABEL } from "./schema.js";
+import { run } from "./action.js";
 
 /** @typedef {import('./github.js').GitHub} GitHub */
 
@@ -14,7 +14,7 @@ const QUALITY_LABELS = [LABEL.FAILING, LABEL.WARNING, LABEL.PASS];
  * @returns {string}
  */
 export function buildQuery() {
-  const negations = QUALITY_LABELS.map((l) => `-label:"${l}"`).join(' ');
+  const negations = QUALITY_LABELS.map((l) => `-label:"${l}"`).join(" ");
   return `is:issue is:open ${negations}`;
 }
 

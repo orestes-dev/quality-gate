@@ -1,21 +1,27 @@
 // Renders a validation scorecard for the bot comment and CLI. Both show every
 // check, pass included.
 
-import { COMMENT_MARKER, STATUS, OVERRIDE_LABEL, OVERRIDE_HEADING } from './schema.js';
+import {
+  COMMENT_MARKER,
+  STATUS,
+  OVERRIDE_LABEL,
+  OVERRIDE_HEADING,
+} from "./schema.js";
 
 /** @typedef {import('./validator.js').Check} Check */
 
 const ICON = {
-  [STATUS.PASS]: '✅',
-  [STATUS.WARN]: '⚠️',
-  [STATUS.FAIL]: '❌',
+  [STATUS.PASS]: "✅",
+  [STATUS.WARN]: "⚠️",
+  [STATUS.FAIL]: "❌",
 };
 
 const FIX_FOOTER =
   `> Fix the failing checks, or add the \`${OVERRIDE_LABEL}\` label with an ` +
   `\`## ${OVERRIDE_HEADING}\` section in the issue body to bypass.`;
-const WARN_FOOTER = '> All required checks pass. Warnings are informational.';
-const PASS_FOOTER = '> All checks pass. This issue meets the structural quality bar.';
+const WARN_FOOTER = "> All required checks pass. Warnings are informational.";
+const PASS_FOOTER =
+  "> All checks pass. This issue meets the structural quality bar.";
 
 /**
  * The footer line for the worst status in the scorecard.
@@ -34,12 +40,12 @@ function footer(checks) {
  * @returns {string}
  */
 export function renderComment({ checks }) {
-  const lines = [COMMENT_MARKER, '### Issue Quality Checklist', ''];
+  const lines = [COMMENT_MARKER, "### Issue Quality Checklist", ""];
   for (const c of checks) {
     lines.push(`- ${ICON[c.status]} **${c.label}**: ${c.message}`);
   }
-  lines.push('', footer(checks));
-  return lines.join('\n');
+  lines.push("", footer(checks));
+  return lines.join("\n");
 }
 
 /**
@@ -49,15 +55,15 @@ export function renderComment({ checks }) {
  */
 export function renderCli({ checks }) {
   const worst = checks.some((c) => c.status === STATUS.FAIL)
-    ? 'FAILED'
+    ? "FAILED"
     : checks.some((c) => c.status === STATUS.WARN)
-      ? 'passed with warnings'
-      : 'passed';
+      ? "passed with warnings"
+      : "passed";
   const lines = [`Issue quality gate: ${worst}`];
   for (const c of checks) {
     lines.push(`  ${ICON[c.status]} ${c.label}: ${strip(c.message)}`);
   }
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 /**
@@ -66,5 +72,5 @@ export function renderCli({ checks }) {
  * @returns {string}
  */
 function strip(text) {
-  return text.split('**').join('').split('`').join('');
+  return text.split("**").join("").split("`").join("");
 }

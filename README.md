@@ -26,22 +26,22 @@ The fields and their headings are owned by the Issue Form
 from it at runtime; the table below is the human-readable bar for the rules
 layered on top.
 
-| Field | Rule | Severity |
-| --- | --- | --- |
-| **Context** | present, ≥ 30 chars | error |
-| **Context** | ≤ 1500 chars | warning (fluff detector) |
-| **Acceptance Criteria** | ≥ 1 non-empty checklist item (`- [ ]`) | error |
-| **Out of Scope** | present, ≥ 10 chars | error |
-| **Size** | one of `XS / S / M / L / XL` | error |
-| **Size** | not `L` / `XL` (too big to land as one issue) | error |
+| Field                   | Rule                                          | Severity                 |
+| ----------------------- | --------------------------------------------- | ------------------------ |
+| **Context**             | present, ≥ 30 chars                           | error                    |
+| **Context**             | ≤ 1500 chars                                  | warning (fluff detector) |
+| **Acceptance Criteria** | ≥ 1 non-empty checklist item (`- [ ]`)        | error                    |
+| **Out of Scope**        | present, ≥ 10 chars                           | error                    |
+| **Size**                | one of `XS / S / M / L / XL`                  | error                    |
+| **Size**                | not `L` / `XL` (too big to land as one issue) | error                    |
 
 The worst per-check status sets one mutually-exclusive label:
 
-| Outcome | Label |
-| --- | --- |
-| ≥ 1 error | `issue-quality:failing` |
+| Outcome               | Label                   |
+| --------------------- | ----------------------- |
+| ≥ 1 error             | `issue-quality:failing` |
 | 0 errors, ≥ 1 warning | `issue-quality:warning` |
-| clean | `issue-quality:pass` |
+| clean                 | `issue-quality:pass`    |
 
 Every run upserts the scorecard comment (removed only by a completed override):
 

@@ -1,8 +1,14 @@
 // Deterministic, dependency-free validator. The issue body is parsed with plain
 // string ops (no regex) into `### <label>` sections.
 
-import { RULES, NO_RESPONSE, LABEL, STATUS, OVERRIDE_HEADING } from './schema.js';
-import { loadForm } from './form.js';
+import {
+  RULES,
+  NO_RESPONSE,
+  LABEL,
+  STATUS,
+  OVERRIDE_HEADING,
+} from "./schema.js";
+import { loadForm } from "./form.js";
 
 /**
  * @typedef {import('./form.js').Field} Field
@@ -29,15 +35,18 @@ import { loadForm } from './form.js';
 const FIELDS = loadForm();
 
 // Checklist prefixes matching GitHub's task-list rendering.
-const BULLETS = ['-', '*', '+'];
-const BOXES = ['[ ]', '[x]', '[X]'];
+const BULLETS = ["-", "*", "+"];
+const BOXES = ["[ ]", "[x]", "[X]"];
 const CHECKLIST_PREFIXES = BULLETS.flatMap((bullet) =>
   BOXES.map((box) => `${bullet} ${box}`),
 );
 
 // Only these headings delimit a section, so a `##`-looking line pasted inside a
 // field can't mis-split the body.
-const KNOWN_HEADINGS = new Set([...FIELDS.map((f) => f.label), OVERRIDE_HEADING]);
+const KNOWN_HEADINGS = new Set([
+  ...FIELDS.map((f) => f.label),
+  OVERRIDE_HEADING,
+]);
 
 /**
  * The heading text of a markdown h2/h3 line (`## ` or `### `).
@@ -46,8 +55,8 @@ const KNOWN_HEADINGS = new Set([...FIELDS.map((f) => f.label), OVERRIDE_HEADING]
  */
 function parseHeading(line) {
   let hashes = 0;
-  while (hashes < line.length && line[hashes] === '#') hashes += 1;
-  if (hashes < 2 || line[hashes] !== ' ') return null;
+  while (hashes < line.length && line[hashes] === "#") hashes += 1;
+  if (hashes < 2 || line[hashes] !== " ") return null;
   return line.slice(hashes + 1).trim();
 }
 
@@ -62,11 +71,11 @@ export function parseSections(body) {
   let buffer = [];
 
   const flush = () => {
-    if (current !== null) sections[current] = buffer.join('\n').trim();
+    if (current !== null) sections[current] = buffer.join("\n").trim();
   };
 
-  for (const rawLine of String(body ?? '').split('\n')) {
-    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+  for (const rawLine of String(body ?? "").split("\n")) {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
     const heading = parseHeading(line);
     if (heading !== null && KNOWN_HEADINGS.has(heading)) {
       flush();
@@ -88,7 +97,7 @@ export function parseSections(body) {
 export function hasOverrideRationale(body) {
   const sections = parseSections(body);
   const rationale = sections[OVERRIDE_HEADING];
-  return typeof rationale === 'string' && rationale.trim().length > 0;
+  return typeof rationale === "string" && rationale.trim().length > 0;
 }
 
 /**
@@ -99,9 +108,9 @@ export function hasOverrideRationale(body) {
  */
 function fieldValue(sections, heading) {
   const raw = sections[heading];
-  if (raw === undefined) return '';
+  if (raw === undefined) return "";
   const trimmed = raw.trim();
-  if (trimmed === NO_RESPONSE) return '';
+  if (trimmed === NO_RESPONSE) return "";
   return trimmed;
 }
 
@@ -112,7 +121,7 @@ function fieldValue(sections, heading) {
  */
 function countChecklistItems(text) {
   let count = 0;
-  for (const rawLine of text.split('\n')) {
+  for (const rawLine of text.split("\n")) {
     const line = rawLine.trim();
     const prefix = CHECKLIST_PREFIXES.find((p) => line.startsWith(p));
     if (prefix === undefined) continue;
@@ -129,7 +138,12 @@ function countChecklistItems(text) {
  * @param {string} message
  * @returns {Check}
  */
-const check = (key, label, status, message) => ({ key, label, status, message });
+const check = (key, label, status, message) => ({
+  key,
+  label,
+  status,
+  message,
+});
 
 /**
  * Dropdown: membership in the form's options, plus RULES `blocking` values too
@@ -142,7 +156,12 @@ const check = (key, label, status, message) => ({ key, label, status, message })
 function checkEnum(field, rule, value) {
   const { id, label, options } = field;
   if (!options.includes(value)) {
-    return check(id, label, STATUS.FAIL, `must be one of ${options.join(', ')}`);
+    return check(
+      id,
+      label,
+      STATUS.FAIL,
+      `must be one of ${options.join(", ")}`,
+    );
   }
   if ((rule?.blocking ?? []).includes(value)) {
     return check(
@@ -167,10 +186,18 @@ function checkChecklist(field, rule, value) {
   const min = rule.minItems ?? 1;
   const items = countChecklistItems(value);
   if (items < min) {
-    const need = min === 1 ? 'at least one checklist item' : `at least ${min} checklist items`;
+    const need =
+      min === 1
+        ? "at least one checklist item"
+        : `at least ${min} checklist items`;
     return check(id, label, STATUS.FAIL, `must contain ${need} (\`- [ ]\`)`);
   }
-  return check(id, label, STATUS.PASS, `${items} checklist item${items === 1 ? '' : 's'}`);
+  return check(
+    id,
+    label,
+    STATUS.PASS,
+    `${items} checklist item${items === 1 ? "" : "s"}`,
+  );
 }
 
 /**
@@ -184,11 +211,21 @@ function checkProse(field, rule, value) {
   const { id, label } = field;
   const min = rule?.minLength;
   if (min && value.length < min) {
-    return check(id, label, STATUS.FAIL, `too short (${value.length} chars, need at least ${min})`);
+    return check(
+      id,
+      label,
+      STATUS.FAIL,
+      `too short (${value.length} chars, need at least ${min})`,
+    );
   }
   const max = rule?.maxLength;
   if (max && value.length > max) {
-    return check(id, label, STATUS.WARN, `long (${value.length} chars, over ${max}); trim narrative bloat`);
+    return check(
+      id,
+      label,
+      STATUS.WARN,
+      `long (${value.length} chars, over ${max}); trim narrative bloat`,
+    );
   }
   return check(id, label, STATUS.PASS, `present (${value.length} chars)`);
 }
@@ -204,11 +241,17 @@ function checkProse(field, rule, value) {
 function checkField(sections, field, rule) {
   const { id, label, required, type } = field;
   const value = fieldValue(sections, label);
-  if (value === '') {
-    if (!required) return check(id, label, STATUS.PASS, 'optional; not provided');
-    return check(id, label, STATUS.FAIL, type === 'dropdown' ? 'missing' : 'missing or empty');
+  if (value === "") {
+    if (!required)
+      return check(id, label, STATUS.PASS, "optional; not provided");
+    return check(
+      id,
+      label,
+      STATUS.FAIL,
+      type === "dropdown" ? "missing" : "missing or empty",
+    );
   }
-  if (type === 'dropdown') return checkEnum(field, rule, value);
+  if (type === "dropdown") return checkEnum(field, rule, value);
   if (rule?.checklist) return checkChecklist(field, rule, value);
   return checkProse(field, rule, value);
 }
@@ -221,7 +264,9 @@ function checkField(sections, field, rule) {
  */
 export function validate(body) {
   const sections = parseSections(body);
-  const checks = FIELDS.map((field) => checkField(sections, field, RULES[field.id]));
+  const checks = FIELDS.map((field) =>
+    checkField(sections, field, RULES[field.id]),
+  );
   return { checks };
 }
 
@@ -229,13 +274,15 @@ export function validate(body) {
  * @param {Check[]} checks
  * @returns {Check[]} The failing checks.
  */
-export const failures = (checks) => checks.filter((c) => c.status === STATUS.FAIL);
+export const failures = (checks) =>
+  checks.filter((c) => c.status === STATUS.FAIL);
 
 /**
  * @param {Check[]} checks
  * @returns {Check[]} The warning checks.
  */
-export const warnings = (checks) => checks.filter((c) => c.status === STATUS.WARN);
+export const warnings = (checks) =>
+  checks.filter((c) => c.status === STATUS.WARN);
 
 /**
  * Which quality label the scorecard implies: worst wins.

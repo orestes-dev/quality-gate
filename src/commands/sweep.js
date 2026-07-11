@@ -1,9 +1,9 @@
 // `sweep`: backfill labels + scorecards across a repo's open issues.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync } from "node:child_process";
 
-import { GitHub } from '../github.js';
-import { sweep as runSweep } from '../sweep.js';
+import { GitHub } from "../github.js";
+import { sweep as runSweep } from "../sweep.js";
 
 /**
  * Run a `gh` CLI command, exiting with a hint on failure. `sweep` runs locally,
@@ -15,9 +15,9 @@ import { sweep as runSweep } from '../sweep.js';
  */
 function gh(args, hint) {
   try {
-    return execFileSync('gh', args, { encoding: 'utf8' }).trim();
+    return execFileSync("gh", args, { encoding: "utf8" }).trim();
   } catch {
-    console.error(`error: \`gh ${args.join(' ')}\` failed. ${hint}`);
+    console.error(`error: \`gh ${args.join(" ")}\` failed. ${hint}`);
     process.exit(2);
   }
 }
@@ -28,13 +28,13 @@ function gh(args, hint) {
  */
 export async function sweep() {
   const token = gh(
-    ['auth', 'token'],
-    'Install the GitHub CLI and run `gh auth login`.',
+    ["auth", "token"],
+    "Install the GitHub CLI and run `gh auth login`.",
   );
   const { owner, name } = JSON.parse(
     gh(
-      ['repo', 'view', '--json', 'owner,name'],
-      'Run this from inside a GitHub repository clone.',
+      ["repo", "view", "--json", "owner,name"],
+      "Run this from inside a GitHub repository clone.",
     ),
   );
   const client = new GitHub({
@@ -54,7 +54,7 @@ export async function sweep() {
   if (capped) {
     console.log(
       `note: ${totalCount} issues matched but the Search API caps results at ` +
-        '1000. Swept issues drop out of the query, so re-run `sweep` to continue.',
+        "1000. Swept issues drop out of the query, so re-run `sweep` to continue.",
     );
   }
   process.exit(failed.length > 0 ? 1 : 0);

@@ -16,7 +16,7 @@ const SEARCH_MAX_PAGES = 10;
  */
 function stripTrailingSlashes(url) {
   let end = url.length;
-  while (end > 0 && url[end - 1] === '/') end -= 1;
+  while (end > 0 && url[end - 1] === "/") end -= 1;
   return url.slice(0, end);
 }
 
@@ -30,7 +30,7 @@ export class GitHub {
    */
   constructor({ token, apiUrl, owner, repo }) {
     this.token = token;
-    this.apiUrl = stripTrailingSlashes(apiUrl || 'https://api.github.com');
+    this.apiUrl = stripTrailingSlashes(apiUrl || "https://api.github.com");
     this.owner = owner;
     this.repo = repo;
   }
@@ -47,10 +47,10 @@ export class GitHub {
       method,
       headers: {
         Authorization: `Bearer ${this.token}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'Content-Type': 'application/json',
-        'User-Agent': 'issue-quality-gate',
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Content-Type": "application/json",
+        "User-Agent": "issue-quality-gate",
       },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -73,7 +73,7 @@ export class GitHub {
    */
   async getIssue(issueNumber) {
     const res = await this.#request(
-      'GET',
+      "GET",
       `${this.#base()}/issues/${issueNumber}`,
     );
     if (!res.ok) throw new Error(`Failed to fetch issue: ${res.status}`);
@@ -89,14 +89,14 @@ export class GitHub {
    */
   async ensureLabel(name, color, description) {
     const res = await this.#request(
-      'GET',
+      "GET",
       `${this.#base()}/labels/${encodeURIComponent(name)}`,
     );
     if (res.ok) return;
     if (res.status !== 404) {
       throw new Error(`Failed to look up label ${name}: ${res.status}`);
     }
-    const create = await this.#request('POST', `${this.#base()}/labels`, {
+    const create = await this.#request("POST", `${this.#base()}/labels`, {
       name,
       color,
       description,
@@ -116,7 +116,7 @@ export class GitHub {
   async addLabels(issueNumber, labels) {
     if (labels.length === 0) return;
     const res = await this.#request(
-      'POST',
+      "POST",
       `${this.#base()}/issues/${issueNumber}/labels`,
       { labels },
     );
@@ -131,7 +131,7 @@ export class GitHub {
    */
   async removeLabel(issueNumber, label) {
     const res = await this.#request(
-      'DELETE',
+      "DELETE",
       `${this.#base()}/issues/${issueNumber}/labels/${encodeURIComponent(label)}`,
     );
     // 404 = label wasn't present; not an error for our purposes.
@@ -151,7 +151,7 @@ export class GitHub {
     let page = 1;
     for (;;) {
       const res = await this.#request(
-        'GET',
+        "GET",
         `${this.#base()}/issues/${issueNumber}/comments?per_page=100&page=${page}`,
       );
       if (!res.ok) throw new Error(`Failed to list comments: ${res.status}`);
@@ -176,7 +176,7 @@ export class GitHub {
     let totalCount = 0;
     for (let page = 1; page <= SEARCH_MAX_PAGES; page += 1) {
       const res = await this.#request(
-        'GET',
+        "GET",
         `/search/issues?q=${encodeURIComponent(q)}&per_page=${SEARCH_PER_PAGE}&page=${page}`,
       );
       if (!res.ok) throw new Error(`Failed to search issues: ${res.status}`);
@@ -195,7 +195,7 @@ export class GitHub {
    */
   async createComment(issueNumber, bodyText) {
     const res = await this.#request(
-      'POST',
+      "POST",
       `${this.#base()}/issues/${issueNumber}/comments`,
       { body: bodyText },
     );
@@ -209,7 +209,7 @@ export class GitHub {
    */
   async updateComment(commentId, bodyText) {
     const res = await this.#request(
-      'PATCH',
+      "PATCH",
       `${this.#base()}/issues/comments/${commentId}`,
       { body: bodyText },
     );
@@ -223,7 +223,7 @@ export class GitHub {
    */
   async deleteComment(commentId) {
     const res = await this.#request(
-      'DELETE',
+      "DELETE",
       `${this.#base()}/issues/comments/${commentId}`,
     );
     if (!res.ok && res.status !== 404) {
