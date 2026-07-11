@@ -9,11 +9,16 @@ import {
   labelFor,
   parseSections,
   hasOverrideRationale,
+  failures,
+  warnings,
 } from '../src/validator.js';
-import { LABEL, FIELD } from '../src/schema.js';
+import { LABEL, FIELD, STATUS } from '../src/schema.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(join(ROOT, rel), 'utf8');
+
+// The check for a given field key, so assertions read against one scorecard line.
+const checkFor = (result, key) => result.checks.find((c) => c.key === key);
 
 const good = [
   '### Context',
@@ -35,12 +40,25 @@ const good = [
   '',
 ].join('\n');
 
-test('a complete, well-formed issue passes with no errors or warnings', () => {
+test('a complete, well-formed issue passes every check', () => {
   const result = validate(good);
-  assert.deepEqual(result.errors, []);
-  assert.deepEqual(result.warnings, []);
+  assert.deepEqual(failures(result.checks), []);
+  assert.deepEqual(warnings(result.checks), []);
+  assert.ok(result.checks.every((c) => c.status === STATUS.PASS));
   assert.equal(result.size, 'S');
   assert.equal(labelFor(result), LABEL.PASS);
+});
+
+test('the scorecard always carries one line per field, pass included', () => {
+  const result = validate(good);
+  assert.deepEqual(
+    result.checks.map((c) => c.key),
+    ['context', 'acceptance-criteria', 'out-of-scope', 'size'],
+  );
+  assert.deepEqual(
+    result.checks.map((c) => c.label),
+    [FIELD.CONTEXT, FIELD.ACCEPTANCE_CRITERIA, FIELD.OUT_OF_SCOPE, FIELD.SIZE],
+  );
 });
 
 test('missing context is a hard error', () => {
@@ -58,7 +76,7 @@ test('missing context is a hard error', () => {
     'S',
   ].join('\n');
   const result = validate(body);
-  assert.ok(result.errors.some((e) => e.includes('Context')));
+  assert.equal(checkFor(result, 'context').status, STATUS.FAIL);
   assert.equal(labelFor(result), LABEL.FAILING);
 });
 
@@ -67,37 +85,39 @@ test('too-short context is a hard error', () => {
     'The dashboard refetches everything on every keystroke, which is slow. We want it debounced so typing stays responsive.',
     'too short',
   );
-  const result = validate(body);
-  assert.ok(result.errors.some((e) => e.includes('too short')));
+  const context = checkFor(validate(body), 'context');
+  assert.equal(context.status, STATUS.FAIL);
+  assert.match(context.message, /too short/);
 });
 
 test('acceptance criteria without a checklist item is a hard error', () => {
   const body = good
     .replace('- [ ] Input is debounced to 300ms', 'Make it fast')
     .replace('- [ ] No refetch fires until typing pauses', 'somehow');
-  const result = validate(body);
-  assert.ok(result.errors.some((e) => e.includes('Acceptance Criteria')));
+  assert.equal(checkFor(validate(body), 'acceptance-criteria').status, STATUS.FAIL);
 });
 
 test('checked items count toward the acceptance-criteria minimum', () => {
   const body = good
     .replace('- [ ] Input is debounced to 300ms', '- [x] Input is debounced to 300ms')
     .replace('- [ ] No refetch fires until typing pauses', 'done');
-  const result = validate(body);
-  assert.ok(!result.errors.some((e) => e.includes('Acceptance Criteria')));
+  assert.equal(checkFor(validate(body), 'acceptance-criteria').status, STATUS.PASS);
 });
 
 test('size L blocks with a hard error', () => {
   const body = good.replace('\nS\n', '\nL\n');
   const result = validate(body);
-  assert.ok(result.errors.some((e) => e.includes('too big')));
+  const size = checkFor(result, 'size');
+  assert.equal(size.status, STATUS.FAIL);
+  assert.match(size.message, /too big/);
   assert.equal(labelFor(result), LABEL.FAILING);
 });
 
 test('an unknown size value is a hard error', () => {
   const body = good.replace('\nS\n', '\nHuge\n');
-  const result = validate(body);
-  assert.ok(result.errors.some((e) => e.includes('must be one of')));
+  const size = checkFor(validate(body), 'size');
+  assert.equal(size.status, STATUS.FAIL);
+  assert.match(size.message, /must be one of/);
 });
 
 test('overlong context is a warning, not an error', () => {
@@ -107,18 +127,16 @@ test('overlong context is a warning, not an error', () => {
     filler,
   );
   const result = validate(body);
-  assert.deepEqual(result.errors, []);
-  assert.ok(result.warnings.some((w) => w.includes('long')));
+  assert.deepEqual(failures(result.checks), []);
+  const context = checkFor(result, 'context');
+  assert.equal(context.status, STATUS.WARN);
+  assert.match(context.message, /long/);
   assert.equal(labelFor(result), LABEL.WARNING);
 });
 
 test('an empty _No response_ field is treated as absent', () => {
-  const body = good.replace(
-    '- Redesigning the search UI',
-    '_No response_',
-  );
-  const result = validate(body);
-  assert.ok(result.errors.some((e) => e.includes('Out of Scope')));
+  const body = good.replace('- Redesigning the search UI', '_No response_');
+  assert.equal(checkFor(validate(body), 'out-of-scope').status, STATUS.FAIL);
 });
 
 test('parseSections handles CRLF line endings', () => {
@@ -155,7 +173,7 @@ test('a markdown heading inside a field does not split the section', () => {
   assert.ok(sections.Context.includes('## configure the thing'));
   assert.ok(sections.Context.includes('That is the whole repro.'));
   assert.equal(sections.Size, 'S');
-  assert.deepEqual(validate(body).errors, []);
+  assert.deepEqual(failures(validate(body).checks), []);
 });
 
 // KNOWN LIMITATION: parseSections is not fence-aware, so a *schema* heading
@@ -180,8 +198,7 @@ test('checklist items count with * and + bullets and a capital [X]', () => {
   const body = good
     .replace('- [ ] Input is debounced to 300ms', '* [ ] alpha')
     .replace('### Out of Scope', '- [X] beta\n+ [x] gamma\n\n### Out of Scope');
-  const result = validate(body);
-  assert.ok(!result.errors.some((e) => e.includes('Acceptance Criteria')));
+  assert.equal(checkFor(validate(body), 'acceptance-criteria').status, STATUS.PASS);
 });
 
 test('hasOverrideRationale detects a non-empty h2 rationale section', () => {
@@ -203,7 +220,7 @@ test('a bare `- [ ]` prefill does not count as a checklist item', () => {
     .replace('- [ ] Input is debounced to 300ms', '- [ ]')
     .replace('- [ ] No refetch fires until typing pauses', '');
   const result = validate(body);
-  assert.ok(result.errors.some((e) => e.includes('Acceptance Criteria')));
+  assert.equal(checkFor(result, 'acceptance-criteria').status, STATUS.FAIL);
   assert.equal(labelFor(result), LABEL.FAILING);
 });
 
@@ -211,8 +228,7 @@ test('a whitespace-only checklist item does not count', () => {
   const body = good
     .replace('- [ ] Input is debounced to 300ms', '- [ ]   ')
     .replace('- [ ] No refetch fires until typing pauses', '');
-  const result = validate(body);
-  assert.ok(result.errors.some((e) => e.includes('Acceptance Criteria')));
+  assert.equal(checkFor(validate(body), 'acceptance-criteria').status, STATUS.FAIL);
 });
 
 // The FIELD headings the validator parses are the Issue Form's element labels,

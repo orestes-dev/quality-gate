@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { validate } from '../src/validator.js';
+import { validate, failures } from '../src/validator.js';
 import { renderCli } from '../src/report.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -61,7 +61,7 @@ function cmdValidate(file) {
   const body = readFileSync(resolve(process.cwd(), file), 'utf8');
   const result = validate(body);
   console.log(renderCli(result));
-  process.exit(result.errors.length > 0 ? 1 : 0);
+  process.exit(failures(result.checks).length > 0 ? 1 : 0);
 }
 
 function main() {

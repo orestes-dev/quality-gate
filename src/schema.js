@@ -34,6 +34,11 @@ export const MAX_LENGTH = {
   [FIELD.CONTEXT]: 1500,
 };
 
+// Per-check outcome, worst-wins across a field's rules. The scorecard comment
+// renders one line per check with an icon derived from this; the mutually
+// exclusive label reflects the worst status across all checks.
+export const STATUS = { PASS: 'pass', WARN: 'warn', FAIL: 'fail' };
+
 // Labels applied by the gate. Mutually exclusive.
 export const LABEL = {
   FAILING: 'issue-quality:failing',

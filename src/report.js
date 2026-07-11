@@ -1,56 +1,53 @@
-// Human-readable rendering of a validation result, shared by the CI bot
-// comment and the pre-flight CLI output.
+// Human-readable rendering of a validation scorecard, shared by the CI bot
+// comment and the pre-flight CLI output. Both show every check, pass included,
+// so a clean issue gets positive confirmation rather than silence.
 
-import { COMMENT_MARKER } from './schema.js';
+import { COMMENT_MARKER, STATUS, OVERRIDE_LABEL, OVERRIDE_HEADING } from './schema.js';
 
-const PASS_HEADER = '## ✅ Issue quality gate passed';
-const WARN_HEADER = '## ⚠️ Issue quality gate: warnings';
-const FAIL_HEADER = '## ❌ Issue quality gate failed';
+const ICON = {
+  [STATUS.PASS]: '✅',
+  [STATUS.WARN]: '⚠️',
+  [STATUS.FAIL]: '❌',
+};
 
-function bulletList(items) {
-  return items.map((item) => `- ${item}`).join('\n');
+const FIX_FOOTER =
+  `> Fix the failing checks, or add the \`${OVERRIDE_LABEL}\` label with an ` +
+  `\`## ${OVERRIDE_HEADING}\` section in the issue body to bypass.`;
+const WARN_FOOTER = '> All required checks pass. Warnings are informational.';
+const PASS_FOOTER = '> All checks pass. This issue meets the structural quality bar.';
+
+function footer(checks) {
+  if (checks.some((c) => c.status === STATUS.FAIL)) return FIX_FOOTER;
+  if (checks.some((c) => c.status === STATUS.WARN)) return WARN_FOOTER;
+  return PASS_FOOTER;
 }
 
 // Markdown body for the bot comment. Includes the hidden marker so the comment
 // can be located and updated in place on later runs.
-export function renderComment({ errors, warnings }) {
-  const lines = [COMMENT_MARKER];
-
-  if (errors.length > 0) {
-    lines.push(FAIL_HEADER, '');
-    lines.push('These must be fixed before the issue is ready:', '');
-    lines.push(bulletList(errors));
-  } else if (warnings.length > 0) {
-    lines.push(WARN_HEADER, '');
-    lines.push('Non-blocking, but worth addressing:', '');
-    lines.push(bulletList(warnings));
-  } else {
-    lines.push(PASS_HEADER, '');
-    lines.push('This issue meets the structural quality bar.');
+export function renderComment({ checks }) {
+  const lines = [COMMENT_MARKER, '### Issue Quality Checklist', ''];
+  for (const c of checks) {
+    lines.push(`- ${ICON[c.status]} **${c.label}**: ${c.message}`);
   }
-
-  if (errors.length > 0 && warnings.length > 0) {
-    lines.push('', '### Warnings', '');
-    lines.push(bulletList(warnings));
-  }
-
+  lines.push('', footer(checks));
   return lines.join('\n');
 }
 
 // Plain-text report for terminal / CLI output.
-export function renderCli({ errors, warnings }) {
-  const lines = [];
-  if (errors.length > 0) {
-    lines.push('Issue quality gate: FAILED');
-    for (const error of errors) lines.push(`  error:   ${strip(error)}`);
-  } else {
-    lines.push('Issue quality gate: passed');
+export function renderCli({ checks }) {
+  const worst = checks.some((c) => c.status === STATUS.FAIL)
+    ? 'FAILED'
+    : checks.some((c) => c.status === STATUS.WARN)
+      ? 'passed with warnings'
+      : 'passed';
+  const lines = [`Issue quality gate: ${worst}`];
+  for (const c of checks) {
+    lines.push(`  ${ICON[c.status]} ${c.label}: ${strip(c.message)}`);
   }
-  for (const warning of warnings) lines.push(`  warning: ${strip(warning)}`);
   return lines.join('\n');
 }
 
-// Drop markdown bold markers for terminal readability.
+// Drop markdown bold/code markers for terminal readability.
 function strip(text) {
-  return text.split('**').join('');
+  return text.split('**').join('').split('`').join('');
 }

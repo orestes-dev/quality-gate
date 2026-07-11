@@ -72,13 +72,26 @@ const event = { issue: { number: 7 } };
 // its correct end state performs ZERO writes, so the label it would apply can
 // never re-trigger the workflow into a loop.
 
-test('no writes when a clean issue already carries the pass label', async () => {
+test('no writes when a clean issue already carries the pass label and scorecard', async () => {
   const gh = fakeGh({
     issue: { number: 7, body: goodBody, labels: [{ name: LABEL.PASS }] },
-    comments: [],
+    comments: [{ id: 1, user: { type: 'Bot' }, body: renderComment(validate(goodBody)) }],
   });
   await run({ gh, event });
   assert.deepEqual(gh.calls, []);
+});
+
+test('a fresh clean issue gets the pass label and a scorecard comment', async () => {
+  const gh = fakeGh({
+    issue: { number: 7, body: goodBody, labels: [] },
+    comments: [],
+  });
+  const summary = await run({ gh, event });
+  assert.match(summary, /passing/);
+  assert.ok(gh.calls.some((c) => c[0] === 'addLabels' && c[2].includes(LABEL.PASS)));
+  const created = gh.calls.find((c) => c[0] === 'createComment');
+  assert.ok(created, 'expected a scorecard comment on clean pass');
+  assert.ok(created[2].includes('Issue Quality Checklist'));
 });
 
 test('no writes when a failing issue already carries the label and comment', async () => {

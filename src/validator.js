@@ -12,6 +12,7 @@ import {
   MIN_LENGTH,
   MAX_LENGTH,
   LABEL,
+  STATUS,
   OVERRIDE_HEADING,
 } from './schema.js';
 
@@ -94,62 +95,109 @@ function countChecklistItems(text) {
   return count;
 }
 
-// Validate a submitted issue body.
-// Returns { errors: string[], warnings: string[], size: string|null }.
-export function validate(body) {
-  const sections = parseSections(body);
-  const errors = [];
-  const warnings = [];
+// One check result. `message` describes the outcome for its status (why it
+// failed, or a short confirmation when it passed) and is rendered verbatim into
+// the scorecard line for `label`.
+const check = (key, label, status, message) => ({ key, label, status, message });
 
-  // Prose fields: presence + min-length (hard), max-length (warning).
-  for (const heading of [FIELD.CONTEXT, FIELD.OUT_OF_SCOPE]) {
-    const value = fieldValue(sections, heading);
-    if (value === '') {
-      errors.push(`**${heading}** is missing or empty.`);
-      continue;
-    }
-    const min = MIN_LENGTH[heading];
-    if (min && value.length < min) {
-      errors.push(
-        `**${heading}** is too short (${value.length} chars, need at least ${min}).`,
-      );
-    }
-    const max = MAX_LENGTH[heading];
-    if (max && value.length > max) {
-      warnings.push(
-        `**${heading}** is long (${value.length} chars, over ${max}); trim narrative bloat.`,
-      );
-    }
-  }
-
-  // Acceptance Criteria: a checklist with at least one item (hard).
-  const ac = fieldValue(sections, FIELD.ACCEPTANCE_CRITERIA);
-  if (ac === '') {
-    errors.push(`**${FIELD.ACCEPTANCE_CRITERIA}** is missing or empty.`);
-  } else if (countChecklistItems(ac) < 1) {
-    errors.push(
-      `**${FIELD.ACCEPTANCE_CRITERIA}** must contain at least one checklist item (\`- [ ]\`).`,
+// A prose field: presence + min-length are hard; an optional max-length is a
+// warning-only fluff detector. Worst status wins, so one line covers the field.
+function checkProse(sections, key, heading) {
+  const value = fieldValue(sections, heading);
+  if (value === '') return check(key, heading, STATUS.FAIL, 'missing or empty');
+  const min = MIN_LENGTH[heading];
+  if (min && value.length < min) {
+    return check(
+      key,
+      heading,
+      STATUS.FAIL,
+      `too short (${value.length} chars, need at least ${min})`,
     );
   }
-
-  // Size: enum membership (hard) + L/XL blocks queue eligibility (hard).
-  const size = fieldValue(sections, FIELD.SIZE) || null;
-  if (size === null) {
-    errors.push(`**${FIELD.SIZE}** is missing.`);
-  } else if (!SIZES.includes(size)) {
-    errors.push(`**${FIELD.SIZE}** must be one of ${SIZES.join(', ')}.`);
-  } else if (BLOCKING_SIZES.includes(size)) {
-    errors.push(
-      `**${FIELD.SIZE}** is ${size}, too big for a single agent run. Split it into smaller issues.`,
+  const max = MAX_LENGTH[heading];
+  if (max && value.length > max) {
+    return check(
+      key,
+      heading,
+      STATUS.WARN,
+      `long (${value.length} chars, over ${max}); trim narrative bloat`,
     );
   }
-
-  return { errors, warnings, size };
+  return check(key, heading, STATUS.PASS, `present (${value.length} chars)`);
 }
 
-// Which mutually-exclusive quality label the result implies.
-export function labelFor({ errors, warnings }) {
-  if (errors.length > 0) return LABEL.FAILING;
-  if (warnings.length > 0) return LABEL.WARNING;
+// Acceptance Criteria: a checklist with at least one non-empty item.
+function checkAcceptanceCriteria(sections) {
+  const key = 'acceptance-criteria';
+  const heading = FIELD.ACCEPTANCE_CRITERIA;
+  const value = fieldValue(sections, heading);
+  if (value === '') return check(key, heading, STATUS.FAIL, 'missing or empty');
+  const items = countChecklistItems(value);
+  if (items < 1) {
+    return check(
+      key,
+      heading,
+      STATUS.FAIL,
+      'must contain at least one checklist item (`- [ ]`)',
+    );
+  }
+  return check(
+    key,
+    heading,
+    STATUS.PASS,
+    `${items} checklist item${items === 1 ? '' : 's'}`,
+  );
+}
+
+// Size: enum membership + L/XL blocks single-agent eligibility. Both hard.
+function checkSize(sections) {
+  const key = 'size';
+  const heading = FIELD.SIZE;
+  const size = fieldValue(sections, heading) || null;
+  if (size === null) return { check: check(key, heading, STATUS.FAIL, 'missing'), size };
+  if (!SIZES.includes(size)) {
+    return {
+      check: check(key, heading, STATUS.FAIL, `must be one of ${SIZES.join(', ')}`),
+      size,
+    };
+  }
+  if (BLOCKING_SIZES.includes(size)) {
+    return {
+      check: check(
+        key,
+        heading,
+        STATUS.FAIL,
+        `${size} is too big for a single agent run; split it into smaller issues`,
+      ),
+      size,
+    };
+  }
+  return { check: check(key, heading, STATUS.PASS, size), size };
+}
+
+// Validate a submitted issue body. Returns a full per-check scorecard so the
+// bot comment can show every check (pass included), not just the failures:
+//   { checks: {key,label,status,message}[], size: string|null }.
+export function validate(body) {
+  const sections = parseSections(body);
+  const size = checkSize(sections);
+  const checks = [
+    checkProse(sections, 'context', FIELD.CONTEXT),
+    checkAcceptanceCriteria(sections),
+    checkProse(sections, 'out-of-scope', FIELD.OUT_OF_SCOPE),
+    size.check,
+  ];
+  return { checks, size: size.size };
+}
+
+// Convenience predicates over a scorecard, so call sites need not know the
+// STATUS strings.
+export const failures = (checks) => checks.filter((c) => c.status === STATUS.FAIL);
+export const warnings = (checks) => checks.filter((c) => c.status === STATUS.WARN);
+
+// Which mutually-exclusive quality label the scorecard implies: worst wins.
+export function labelFor({ checks }) {
+  if (checks.some((c) => c.status === STATUS.FAIL)) return LABEL.FAILING;
+  if (checks.some((c) => c.status === STATUS.WARN)) return LABEL.WARNING;
   return LABEL.PASS;
 }

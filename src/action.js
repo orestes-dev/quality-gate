@@ -10,11 +10,18 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { validate, labelFor, hasOverrideRationale } from './validator.js';
+import {
+  validate,
+  labelFor,
+  hasOverrideRationale,
+  failures,
+  warnings,
+} from './validator.js';
 import { renderComment } from './report.js';
 import {
   LABEL,
   LABEL_META,
+  STATUS,
   COMMENT_MARKER,
   OVERRIDE_LABEL,
   OVERRIDE_HEADING,
@@ -64,17 +71,11 @@ async function deleteGateComment(gh, issueNumber) {
   if (existing) await gh.deleteComment(existing.id);
 }
 
+// Upsert the scorecard comment. Every outcome carries it, pass included: a
+// green checklist is positive confirmation the gate ran, not silence. The only
+// case that removes it is a completed override (handled separately).
 async function syncComment(gh, issueNumber, result) {
   const existing = await gh.findComment(issueNumber, isGateComment);
-
-  // Clean pass carries no label, so it carries no comment either. Remove a
-  // stale one left over from a previous failing/warning state.
-  const clean = result.errors.length === 0 && result.warnings.length === 0;
-  if (clean) {
-    if (existing) await gh.deleteComment(existing.id);
-    return;
-  }
-
   const bodyText = renderComment(result);
   if (!existing) {
     await gh.createComment(issueNumber, bodyText);
@@ -110,22 +111,28 @@ export async function run({ gh, event }) {
 
   const result = validate(body);
 
-  // Override intent signalled but incomplete: nudge the author to write why.
+  // Override intent signalled but incomplete: nudge the author to write why,
+  // as its own scorecard line so it counts toward the warning label.
   if (currentLabels.includes(OVERRIDE_LABEL) && !hasOverrideRationale(body)) {
-    result.warnings.push(
-      `\`${OVERRIDE_LABEL}\` is set but there is no \`## ${OVERRIDE_HEADING}\` section; the gate still applies.`,
-    );
+    result.checks.push({
+      key: 'override',
+      label: 'Override',
+      status: STATUS.WARN,
+      message: `\`${OVERRIDE_LABEL}\` is set but there is no \`## ${OVERRIDE_HEADING}\` section; the gate still applies`,
+    });
   }
 
   const desiredLabel = labelFor(result);
   await reconcileLabels(gh, issue.number, currentLabels, desiredLabel);
   await syncComment(gh, issue.number, result);
 
-  if (result.errors.length > 0) {
-    return `issue #${issue.number}: failing (${result.errors.length} error(s))`;
+  const fails = failures(result.checks);
+  const warns = warnings(result.checks);
+  if (fails.length > 0) {
+    return `issue #${issue.number}: failing (${fails.length} error(s))`;
   }
-  if (result.warnings.length > 0) {
-    return `issue #${issue.number}: warning (${result.warnings.length} warning(s))`;
+  if (warns.length > 0) {
+    return `issue #${issue.number}: warning (${warns.length} warning(s))`;
   }
   return `issue #${issue.number}: passing`;
 }
