@@ -165,11 +165,9 @@ flowchart TD
   copy of the form, so the scaffolded `task.yml` is not meant to be edited:
   renaming a heading or changing the size options makes submitted issues stop
   matching, and every one is marked failing.
-- **Going-forward only.** Opt-in does not auto-backfill; existing issues are
-  validated when next edited. Run [`sweep`](#backfilling-the-backlog) to label
-  the current backlog on demand.
 
 ## Architecture
 
-Structure comes from the Issue Form (`task.yml`, parsed at runtime); rules the
-form can't express live in `src/schema.js`.
+Structure is read from the Issue Form at runtime; rules the form can't express
+live in `src/schema.js`. [`CONTEXT.md`](CONTEXT.md) is the domain glossary:
+Issue Form, structure, field, section, rule, check, scorecard, override.
