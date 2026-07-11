@@ -21,6 +21,11 @@ enum.
 
 ## What it checks
 
+The fields and their headings are owned by the Issue Form
+([`.github/ISSUE_TEMPLATE/task.yml`](.github/ISSUE_TEMPLATE/task.yml)) and read
+from it at runtime; the table below is the human-readable bar for the rules
+layered on top.
+
 | Field | Rule | Severity |
 | --- | --- | --- |
 | **Context** | present, ≥ 30 chars | error |
@@ -163,9 +168,14 @@ flowchart TD
 
 ## Architecture
 
-- `src/schema.js` — single source of truth for fields, limits, labels, statuses.
-- `src/validator.js` — pure, dependency-free, regex-free parse + validate;
-  returns a per-check scorecard (`{ checks, size }`).
+- `.github/ISSUE_TEMPLATE/task.yml` — the Issue Form: single source of truth for
+  issue **structure** (field ids, headings, required, dropdown options), parsed
+  at runtime.
+- `src/form.js` — parses the Issue Form into the structure the validator checks.
+- `src/schema.js` — the **rules** the form cannot express (min/max length,
+  checklist count, blocking sizes), keyed by field id, plus labels and statuses.
+- `src/validator.js` — joins structure to rules and validates; regex-free body
+  parse; returns a per-check scorecard (`{ checks }`).
 - `src/report.js` — renders the scorecard as the bot comment and CLI output.
 - `src/action.js` — CI entry: reconciles labels, upserts the scorecard comment.
 - `src/sweep.js` — backfill: searches a repo's unlabeled open issues and runs
@@ -174,6 +184,7 @@ flowchart TD
 - `bin/cli.js` — `init`, `validate`, and `sweep` commands.
 - `action.yml` — composite Action consumed by opted-in repos.
 
-Node.js ≥ 18 on the CI runner and locally. The Action calls the runner's ambient
-`node` (no `setup-node`), which `ubuntu-latest` ships; a self-hosted runner needs
-a compatible `node` on `PATH`.
+Node.js ≥ 18 locally. On the runner the Action sets up Node 24 and installs its
+one runtime dependency (`yaml`, to parse the Issue Form) with Yarn, cached by the
+action's own lockfile so warm runs skip the install. A self-hosted runner needs
+Corepack available to provision Yarn.
