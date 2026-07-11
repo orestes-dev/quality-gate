@@ -17,7 +17,7 @@ export const FIELD = {
 // GitHub renders an empty optional field as this literal. Treat it as absent.
 export const NO_RESPONSE = '_No response_';
 
-// Size enum, in ascending order. L/XL are too big for a single agent run.
+// Size enum, in ascending order. L/XL are too big to land as one issue.
 export const SIZES = ['XS', 'S', 'M', 'L', 'XL'];
 export const BLOCKING_SIZES = ['L', 'XL'];
 

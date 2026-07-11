@@ -1,5 +1,5 @@
 name: Task
-description: A well-scoped task ready for an autonomous coding agent.
+description: A well-scoped, actionable task.
 title: "[Task]: "
 body:
   - type: markdown
@@ -7,7 +7,7 @@ body:
       value: |
         Fill in every field. A structural quality gate runs automatically and
         will flag issues that are missing context, acceptance criteria, or that
-        are too large for a single agent run.
+        are too large to land as one issue.
   - type: textarea
     id: context
     attributes:
@@ -48,7 +48,7 @@ body:
     attributes:
       label: Size
       description: >-
-        Estimated size. L and XL are too big for a single agent run; split them
+        Estimated size. L and XL are too big to land as one issue; split them
         into smaller issues.
       options:
         - XS

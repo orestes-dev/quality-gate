@@ -1,5 +1,5 @@
-// Deterministic, dependency-free validator. No LLM judgment: presence,
-// min/max length, checklist item count, enum membership only.
+// Deterministic, dependency-free validator: presence, min/max length,
+// checklist item count, enum membership only.
 //
 // Parsing is done with plain string operations (no regex): the submitted issue
 // body is a sequence of `### <label>` sections produced by the Issue Form.
@@ -149,7 +149,7 @@ function checkAcceptanceCriteria(sections) {
   );
 }
 
-// Size: enum membership + L/XL blocks single-agent eligibility. Both hard.
+// Size: enum membership + L/XL blocks as too large to land as one issue. Both hard.
 function checkSize(sections) {
   const key = 'size';
   const heading = FIELD.SIZE;
@@ -167,7 +167,7 @@ function checkSize(sections) {
         key,
         heading,
         STATUS.FAIL,
-        `${size} is too big for a single agent run; split it into smaller issues`,
+        `${size} is too big to land as one issue; split it into smaller issues`,
       ),
       size,
     };

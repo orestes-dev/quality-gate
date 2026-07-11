@@ -1,7 +1,7 @@
 # Issue quality gate: thin consuming workflow.
 #
 # This file is the opt-in: its presence turns CI enforcement on for this repo
-# and signals coding agents to pre-flight-validate before `gh issue create`.
+# and signals contributors to pre-flight-validate before `gh issue create`.
 # It calls the shared reusable Action, pinned to @main so rule/schema changes
 # propagate on the next run with no per-repo bump.
 name: Issue Quality Gate

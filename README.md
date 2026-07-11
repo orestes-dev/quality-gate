@@ -1,8 +1,8 @@
 # issue-quality-gate
 
-A deterministic quality gate for GitHub issues, so they are reliable input for
-autonomous coding agents. Structural checks only — presence, length, checklist
-count, size enum. No LLM judgment.
+A deterministic quality gate for GitHub issues, so they land well-scoped and
+actionable. Structural checks only — presence, length, checklist count, size
+enum.
 
 ## Features
 
@@ -16,7 +16,7 @@ count, size enum. No LLM judgment.
 - **Manual override** — a labelled escape hatch with a required written rationale.
 - **One-command opt-in** — `npx github:orestes-dev/issue-quality-gate init` drops
   the Issue Form + workflow; no per-repo config.
-- **Shared pre-flight validator** — agents run the same checks locally before
+- **Shared pre-flight validator** — run the same checks locally before
   `gh issue create`.
 
 ## What it checks
@@ -28,7 +28,7 @@ count, size enum. No LLM judgment.
 | **Acceptance Criteria** | ≥ 1 non-empty checklist item (`- [ ]`) | error |
 | **Out of Scope** | present, ≥ 10 chars | error |
 | **Size** | one of `XS / S / M / L / XL` | error |
-| **Size** | not `L` / `XL` (too big for one agent run) | error |
+| **Size** | not `L` / `XL` (too big to land as one issue) | error |
 
 The worst per-check status sets one mutually-exclusive label:
 
