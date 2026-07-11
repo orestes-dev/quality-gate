@@ -78,6 +78,37 @@ Blank or freeform issues (any `gh issue create` body) skip the form and land as
 entirely, add `.github/ISSUE_TEMPLATE/config.yml` with
 `blank_issues_enabled: false` yourself.
 
+The gate labels issues going forward, from the first event on each. To label the
+existing backlog too, run [`sweep`](#backfilling-the-backlog) once after opting
+in.
+
+## Backfilling the backlog
+
+Opt-in is going-forward only: an existing issue is validated the next time it is
+edited, so an untouched backlog stays unlabeled. To backfill on demand, run:
+
+```sh
+npx github:orestes-dev/issue-quality-gate sweep
+```
+
+`sweep` labels + scorecards every **open** issue that has no `issue-quality:*`
+label yet, running each through the same gate the CI action does. It takes no
+flags: it reads credentials from `gh auth token` and the target repo from
+`gh repo view`, so run it inside an authenticated clone of the repo.
+
+- **Idempotent and re-runnable.** Already-labeled issues are filtered out server
+  side, so they are never touched or re-notified; only unlabeled issues are
+  swept. Re-running only picks up new arrivals.
+- **Resilient.** A failure on one issue is reported and the sweep continues; the
+  run exits non-zero if any issue failed, so you can re-run to retry just those.
+- **Backlogs over 1000.** GitHub caps issue search at 1000 results. Because
+  sweeping labels an issue (dropping it from the query), `sweep` prints a notice
+  when more remain — re-run until it stops.
+
+Labels are created on first use with intentional colors and descriptions, so
+`sweep` (or the first CI run) also materializes the three `issue-quality:*`
+labels in the repo; there is no separate label-setup step.
+
 ## Pre-flight validation
 
 Before `gh issue create`, run the same validator on a draft file:
@@ -126,8 +157,9 @@ flowchart TD
   that a bad change affects every opted-in repo at once.
 - **Fixed schema.** No per-repo config or inputs, so the labels mean the same
   thing in every repo.
-- **Going-forward only.** Opt-in does not backfill; existing issues are validated
-  when next edited. A manual `sweep` to label the backlog is planned.
+- **Going-forward only.** Opt-in does not auto-backfill; existing issues are
+  validated when next edited. Run [`sweep`](#backfilling-the-backlog) to label
+  the current backlog on demand.
 
 ## Architecture
 
@@ -136,7 +168,10 @@ flowchart TD
   returns a per-check scorecard (`{ checks, size }`).
 - `src/report.js` — renders the scorecard as the bot comment and CLI output.
 - `src/action.js` — CI entry: reconciles labels, upserts the scorecard comment.
-- `bin/cli.js` — `init` and `validate` commands.
+- `src/sweep.js` — backfill: searches a repo's unlabeled open issues and runs
+  each through the same `action.js` gate core.
+- `src/github.js` — zero-dependency REST client (labels, comments, search).
+- `bin/cli.js` — `init`, `validate`, and `sweep` commands.
 - `action.yml` — composite Action consumed by opted-in repos.
 
 Node.js ≥ 18 on the CI runner and locally. The Action calls the runner's ambient
