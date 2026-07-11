@@ -5,10 +5,14 @@ import { execFileSync } from 'node:child_process';
 import { GitHub } from '../github.js';
 import { sweep as runSweep } from '../sweep.js';
 
-// `sweep` runs locally on demand, not in CI, so it borrows the operator's own
-// GitHub CLI session for both credentials and repo context instead of demanding
-// a GITHUB_TOKEN and a --repo flag. `gh` is already how this workflow talks to
-// GitHub everywhere else.
+/**
+ * Run a `gh` CLI command, exiting with a hint on failure. `sweep` runs locally,
+ * so it borrows the operator's `gh` session for creds and repo context instead
+ * of a GITHUB_TOKEN + --repo flag.
+ * @param {string[]} args - Arguments passed to `gh`.
+ * @param {string} hint - Remediation shown if the command fails.
+ * @returns {string} Trimmed stdout.
+ */
 function gh(args, hint) {
   try {
     return execFileSync('gh', args, { encoding: 'utf8' }).trim();
@@ -18,6 +22,10 @@ function gh(args, hint) {
   }
 }
 
+/**
+ * Backfill the current repo's open issues, then exit non-zero if any failed.
+ * @returns {Promise<void>}
+ */
 export async function sweep() {
   const token = gh(
     ['auth', 'token'],

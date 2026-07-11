@@ -1,9 +1,5 @@
 #!/usr/bin/env node
 // CLI entry for `npx github:orestes-dev/issue-quality-gate <command>`.
-//
-//   init             Drop the Issue Form + thin workflow into the current repo.
-//   validate <file>  Run the validator against an issue body file (pre-flight).
-//   sweep            Backfill labels + scorecards across a repo's open issues.
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -13,6 +9,12 @@ import { renderCli } from '../src/report.js';
 import { init } from '../src/commands/init.js';
 import { sweep } from '../src/commands/sweep.js';
 
+/**
+ * Validate an issue body file and print the scorecard. Exits 1 on hard errors,
+ * 2 on usage error.
+ * @param {string|undefined} file - Path to the issue body file.
+ * @returns {void}
+ */
 function cmdValidate(file) {
   if (!file) {
     console.error('usage: issue-quality-gate validate <file>');
@@ -24,6 +26,10 @@ function cmdValidate(file) {
   process.exit(failures(result.checks).length > 0 ? 1 : 0);
 }
 
+/**
+ * Dispatch the sub-command named in argv.
+ * @returns {void|Promise<void>}
+ */
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
   switch (command) {

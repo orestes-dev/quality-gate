@@ -12,10 +12,15 @@ import {
   failures,
   warnings,
 } from './validator.js';
-import { LABEL, FIELD, STATUS } from './schema.js';
+import { LABEL, STATUS, RULES } from './schema.js';
+import { loadForm } from './form.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(join(ROOT, rel), 'utf8');
+
+// The template-derived structure the validator runs against.
+const FIELDS = loadForm();
+const fieldById = (id) => FIELDS.find((f) => f.id === id);
 
 // The check for a given field key, so assertions read against one scorecard line.
 const checkFor = (result, key) => result.checks.find((c) => c.key === key);
@@ -45,19 +50,20 @@ test('a complete, well-formed issue passes every check', () => {
   assert.deepEqual(failures(result.checks), []);
   assert.deepEqual(warnings(result.checks), []);
   assert.ok(result.checks.every((c) => c.status === STATUS.PASS));
-  assert.equal(result.size, 'S');
   assert.equal(labelFor(result), LABEL.PASS);
 });
 
 test('the scorecard always carries one line per field, pass included', () => {
   const result = validate(good);
+  // One check per input field, in form order, keyed by field id and labelled
+  // with the field's heading, both derived from the Issue Form.
   assert.deepEqual(
     result.checks.map((c) => c.key),
-    ['context', 'acceptance-criteria', 'out-of-scope', 'size'],
+    FIELDS.map((f) => f.id),
   );
   assert.deepEqual(
     result.checks.map((c) => c.label),
-    [FIELD.CONTEXT, FIELD.ACCEPTANCE_CRITERIA, FIELD.OUT_OF_SCOPE, FIELD.SIZE],
+    FIELDS.map((f) => f.label),
   );
 });
 
@@ -231,26 +237,41 @@ test('a whitespace-only checklist item does not count', () => {
   assert.equal(checkFor(validate(body), 'acceptance-criteria').status, STATUS.FAIL);
 });
 
-// The FIELD headings the validator parses are the Issue Form's element labels,
-// which GitHub renders as `### <label>`. Renaming a form label without updating
-// FIELD silently breaks parsing; guard the coupling.
-test('every FIELD heading exists as a label in the Issue Form template', () => {
-  const raw = read('templates/issue-form.yml');
-  for (const heading of Object.values(FIELD)) {
-    assert.ok(
-      raw.includes(`label: ${heading}`),
-      `templates/issue-form.yml is missing "label: ${heading}"`,
-    );
-  }
+// RULES (schema.js) and the input fields (Issue Form) must be in bijection:
+// every rule maps to a real field, and every field has a rule. An orphaned rule
+// (typo'd id, deleted field) or an unruled field fails CI here.
+test('RULES keys are exactly the Issue Form input-field ids', () => {
+  assert.deepEqual(
+    Object.keys(RULES).sort(),
+    FIELDS.map((f) => f.id).sort(),
+  );
 });
 
-// The committed dogfood form is the scaffolded template applied to this repo;
-// keep the two byte-for-byte identical so the repo gates itself on the same
-// schema it ships.
-test('the dogfood Issue Form matches the scaffolded template', () => {
-  assert.equal(
-    read('.github/ISSUE_TEMPLATE/task.yml'),
-    read('templates/issue-form.yml'),
-    'dogfood form drifted from templates/issue-form.yml',
+// The README restates the rules as the human-readable bar. That is accepted
+// duplication, kept safe by this drift test. The phrasing per rule property is
+// prose (can't be derived), but the values come from RULES, so coverage is by
+// construction: add a ruled field and its README line becomes required here
+// automatically. Only properties the README actually restates are listed; a
+// property absent from a rule is skipped (e.g. Acceptance Criteria has no
+// length). Size options come from the form, not RULES, so they stay separate.
+const README_RULE_PHRASING = {
+  minLength: (n) => `≥ ${n} chars`,
+  maxLength: (n) => `≤ ${n} chars`,
+  minItems: (n) => `≥ ${n} non-empty checklist item${n === 1 ? '' : 's'}`,
+  blocking: (sizes) => sizes.map((s) => `\`${s}\``).join(' / '),
+};
+
+test('README restates every drift-guarded rule property, and the size options', () => {
+  const readme = read('README.md');
+  for (const [id, rule] of Object.entries(RULES)) {
+    for (const [prop, render] of Object.entries(README_RULE_PHRASING)) {
+      if (rule[prop] === undefined) continue;
+      const phrase = render(rule[prop]);
+      assert.ok(readme.includes(phrase), `README is missing "${phrase}" for ${id}.${prop}`);
+    }
+  }
+  assert.ok(
+    readme.includes(fieldById('size').options.join(' / ')),
+    'README size options drifted from the Issue Form',
   );
 });

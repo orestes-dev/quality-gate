@@ -1,11 +1,7 @@
-// CI entry point. Invoked by the composite action on issues:{opened,edited,
-// labeled,unlabeled}. Fetches the issue fresh from the API, validates its body,
-// reconciles the two mutually-exclusive quality labels, and keeps a single bot
-// comment in sync.
-//
-// Every write is diff-based and idempotent: a re-run that finds the issue
-// already in the correct state performs no writes, so the label triggers do not
-// cause an event loop.
+// CI entry point: validates an issue body, reconciles the mutually-exclusive
+// quality labels, and keeps a single bot comment in sync. Every write is
+// diff-based, so a re-run in the correct state writes nothing and the label
+// triggers do not loop.
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -28,29 +24,39 @@ import {
 } from './schema.js';
 import { GitHub } from './github.js';
 
+/** @typedef {import('./validator.js').Scorecard} Scorecard */
+
 const ALL_QUALITY_LABELS = [LABEL.FAILING, LABEL.WARNING, LABEL.PASS];
 
-// The gate's own comment carries a hidden marker so it can be located and
-// updated in place. Exactly one such comment ever exists per issue. The author
-// must be a bot: a human who pastes the marker into their own comment must not
-// have it adopted (updated or deleted) by the gate.
+/**
+ * Author must be a bot so a human who pastes the marker isn't adopted.
+ * @param {object} c - A GitHub comment resource.
+ * @returns {boolean}
+ */
 const isGateComment = (c) =>
   c.user?.type === 'Bot' && c.body?.includes(COMMENT_MARKER);
 
+/**
+ * Load the webhook event payload from `GITHUB_EVENT_PATH`.
+ * @returns {object}
+ * @throws {Error} When the env var is unset.
+ */
 function loadEvent() {
   const path = process.env.GITHUB_EVENT_PATH;
   if (!path) throw new Error('GITHUB_EVENT_PATH is not set.');
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-// Drive the issue to carry exactly `desiredLabel` (or none if null) out of the
-// mutually-exclusive quality set. Diff-based: no-ops when already correct.
-//
-// Add before remove: GitHub has no atomic add-and-remove delta call (only a
-// full-set PUT, which would clobber concurrent unrelated-label edits). Adding
-// the desired label first means an interrupted run — `cancel-in-progress` can
-// kill it between calls — leaves the issue over-labeled rather than with no
-// quality label at all, which is more visible and self-corrects on the next run.
+/**
+ * Drive the issue to carry exactly `desiredLabel` (or none). Add before remove:
+ * an interrupted run then leaves the issue over-labeled rather than unlabeled,
+ * which is more visible and self-corrects next run.
+ * @param {GitHub} gh
+ * @param {number} issueNumber
+ * @param {string[]} currentLabels
+ * @param {string|null} desiredLabel - The quality label to keep, or null for none.
+ * @returns {Promise<void>}
+ */
 async function reconcileLabels(gh, issueNumber, currentLabels, desiredLabel) {
   const current = new Set(currentLabels);
 
@@ -66,14 +72,25 @@ async function reconcileLabels(gh, issueNumber, currentLabels, desiredLabel) {
   for (const label of toRemove) await gh.removeLabel(issueNumber, label);
 }
 
+/**
+ * Remove the gate's own comment if present.
+ * @param {GitHub} gh
+ * @param {number} issueNumber
+ * @returns {Promise<void>}
+ */
 async function deleteGateComment(gh, issueNumber) {
   const existing = await gh.findComment(issueNumber, isGateComment);
   if (existing) await gh.deleteComment(existing.id);
 }
 
-// Upsert the scorecard comment. Every outcome carries it, pass included: a
-// green checklist is positive confirmation the gate ran, not silence. The only
-// case that removes it is a completed override (handled separately).
+/**
+ * Upsert the scorecard comment. Every outcome carries it, pass included: a green
+ * checklist confirms the gate ran.
+ * @param {GitHub} gh
+ * @param {number} issueNumber
+ * @param {Scorecard} result
+ * @returns {Promise<void>}
+ */
 async function syncComment(gh, issueNumber, result) {
   const existing = await gh.findComment(issueNumber, isGateComment);
   const bodyText = renderComment(result);
@@ -81,28 +98,32 @@ async function syncComment(gh, issueNumber, result) {
     await gh.createComment(issueNumber, bodyText);
     return;
   }
-  // Only rewrite when the content actually changed, to avoid comment churn.
+  // Rewrite only on change, to avoid comment churn.
   if (existing.body.trim() !== bodyText.trim()) {
     await gh.updateComment(existing.id, bodyText);
   }
 }
 
-// Core gate logic, decoupled from process env so it can be driven with an
-// injected GitHub client and event payload in tests. Returns a short status
-// string for logging.
+/**
+ * Core gate logic, decoupled from process env so tests can inject a client and
+ * event.
+ * @param {object} params
+ * @param {GitHub} params.gh
+ * @param {object} params.event - The webhook event payload, carrying `.issue`.
+ * @returns {Promise<string>} A status string for logging.
+ */
 export async function run({ gh, event }) {
   const eventIssue = event.issue;
   if (!eventIssue) throw new Error('Event payload has no issue.');
 
-  // Fetch fresh: the event payload's body/labels can be stale on edited/labeled.
+  // Fetch fresh: the event payload's body/labels can be stale.
   const issue = await gh.getIssue(eventIssue.number);
   const body = issue.body || '';
   const currentLabels = (issue.labels || []).map((l) =>
     typeof l === 'string' ? l : l.name,
   );
 
-  // Manual override: the label plus a written rationale bypasses the gate. Strip
-  // every quality label and the gate comment, then stop.
+  // Manual override: label plus a written rationale bypasses the gate.
   if (currentLabels.includes(OVERRIDE_LABEL) && hasOverrideRationale(body)) {
     await reconcileLabels(gh, issue.number, currentLabels, null);
     await deleteGateComment(gh, issue.number);
@@ -111,8 +132,7 @@ export async function run({ gh, event }) {
 
   const result = validate(body);
 
-  // Override intent signalled but incomplete: nudge the author to write why,
-  // as its own scorecard line so it counts toward the warning label.
+  // Override signalled but incomplete: nudge the author, as a warning line.
   if (currentLabels.includes(OVERRIDE_LABEL) && !hasOverrideRationale(body)) {
     result.checks.push({
       key: 'override',
@@ -137,6 +157,10 @@ export async function run({ gh, event }) {
   return `issue #${issue.number}: passing`;
 }
 
+/**
+ * CLI entry: build a client from the environment and gate the triggering issue.
+ * @returns {Promise<void>}
+ */
 async function main() {
   const [owner, repo] = (process.env.GITHUB_REPOSITORY || '').split('/');
   const gh = new GitHub({
@@ -149,7 +173,6 @@ async function main() {
   console.log(summary);
 }
 
-// Only run as a CLI when invoked directly, not when imported by tests.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   main().catch((err) => {
     console.error(err.message || err);

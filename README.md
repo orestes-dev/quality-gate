@@ -1,25 +1,30 @@
 # issue-quality-gate
 
 A deterministic quality gate for GitHub issues, so they land well-scoped and
-actionable. Structural checks only — presence, length, checklist count, size
+actionable. Structural checks only: presence, length, checklist count, size
 enum.
 
 ## Features
 
-- **Deterministic checks** — presence, min/max length, acceptance-criteria
+- **Deterministic checks**: presence, min/max length, acceptance-criteria
   checklist count, size enum. Same rules every time.
-- **Scorecard comment** — every run upserts one **Issue Quality Checklist** with
+- **Scorecard comment**: every run upserts one **Issue Quality Checklist** with
   a ✅ / ⚠️ / ❌ line per check, so a clean issue gets confirmation, not silence.
-- **Three mutually-exclusive labels** — `issue-quality:failing` (hard block),
-  `issue-quality:warning` (non-blocking), `issue-quality:pass` — a filterable
+- **Three mutually-exclusive labels**: `issue-quality:failing` (hard block),
+  `issue-quality:warning` (non-blocking), `issue-quality:pass`, a filterable
   signal for downstream automation.
-- **Manual override** — a labelled escape hatch with a required written rationale.
-- **One-command opt-in** — `npx github:orestes-dev/issue-quality-gate init` drops
+- **Manual override**: a labelled escape hatch with a required written rationale.
+- **One-command opt-in**: `npx github:orestes-dev/issue-quality-gate init` drops
   the Issue Form + workflow; no per-repo config.
-- **Shared pre-flight validator** — run the same checks locally before
+- **Shared pre-flight validator**: run the same checks locally before
   `gh issue create`.
 
 ## What it checks
+
+The fields and their headings are owned by the Issue Form
+([`.github/ISSUE_TEMPLATE/task.yml`](.github/ISSUE_TEMPLATE/task.yml)) and read
+from it at runtime; the table below is the human-readable bar for the rules
+layered on top.
 
 | Field | Rule | Severity |
 | --- | --- | --- |
@@ -63,8 +68,8 @@ npx github:orestes-dev/issue-quality-gate init
 
 Run from the repo root. This drops two files, which together are the opt-in:
 
-- `.github/ISSUE_TEMPLATE/task.yml` — the Issue Form (canonical schema).
-- `.github/workflows/issue-quality.yml` — a thin workflow calling the shared
+- `.github/ISSUE_TEMPLATE/task.yml`: the Issue Form (canonical schema).
+- `.github/workflows/issue-quality.yml`: a thin workflow calling the shared
   Action at `@main`.
 
 Commit both. CI runs on `issues: opened` / `edited` always, and on `labeled` /
@@ -103,7 +108,7 @@ flags: it reads credentials from `gh auth token` and the target repo from
   run exits non-zero if any issue failed, so you can re-run to retry just those.
 - **Backlogs over 1000.** GitHub caps issue search at 1000 results. Because
   sweeping labels an issue (dropping it from the query), `sweep` prints a notice
-  when more remain — re-run until it stops.
+  when more remain; re-run until it stops.
 
 Labels are created on first use with intentional colors and descriptions, so
 `sweep` (or the first CI run) also materializes the three `issue-quality:*`
@@ -153,27 +158,18 @@ flowchart TD
 ## Notes
 
 - **`@main`, unpinned.** Consumers reference `orestes-dev/issue-quality-gate@main`,
-  so rule changes propagate on the next run with no per-repo bump — accepting
+  so rule changes propagate on the next run with no per-repo bump, accepting
   that a bad change affects every opted-in repo at once.
 - **Fixed schema.** No per-repo config or inputs, so the labels mean the same
-  thing in every repo.
+  thing in every repo. The gate reads structure from its own checkout, not your
+  copy of the form, so the scaffolded `task.yml` is not meant to be edited:
+  renaming a heading or changing the size options makes submitted issues stop
+  matching, and every one is marked failing.
 - **Going-forward only.** Opt-in does not auto-backfill; existing issues are
   validated when next edited. Run [`sweep`](#backfilling-the-backlog) to label
   the current backlog on demand.
 
 ## Architecture
 
-- `src/schema.js` — single source of truth for fields, limits, labels, statuses.
-- `src/validator.js` — pure, dependency-free, regex-free parse + validate;
-  returns a per-check scorecard (`{ checks, size }`).
-- `src/report.js` — renders the scorecard as the bot comment and CLI output.
-- `src/action.js` — CI entry: reconciles labels, upserts the scorecard comment.
-- `src/sweep.js` — backfill: searches a repo's unlabeled open issues and runs
-  each through the same `action.js` gate core.
-- `src/github.js` — zero-dependency REST client (labels, comments, search).
-- `bin/cli.js` — `init`, `validate`, and `sweep` commands.
-- `action.yml` — composite Action consumed by opted-in repos.
-
-Node.js ≥ 18 on the CI runner and locally. The Action calls the runner's ambient
-`node` (no `setup-node`), which `ubuntu-latest` ships; a self-hosted runner needs
-a compatible `node` on `PATH`.
+Structure comes from the Issue Form (`task.yml`, parsed at runtime); rules the
+form can't express live in `src/schema.js`.

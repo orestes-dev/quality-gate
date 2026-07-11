@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse } from 'yaml';
 
 import { run } from './action.js';
 import { validate } from './validator.js';
@@ -216,4 +217,31 @@ test('both workflows couple the trigger filter to the schema strings', () => {
       `${rel} is missing the human-sender guard`,
     );
   }
+});
+
+// The consumer template (`@main`) and the dogfood workflow (`./`) are accepted
+// duplication: they legitimately differ on the `uses:` line, comments, and the
+// dogfood's extra `contents: read` + checkout step. This drift test guards the
+// parts that MUST stay in lock-step so the repo gates itself exactly as it tells
+// consumers to.
+test('the two workflows agree on their shared trigger, permissions, concurrency, and filter', () => {
+  const consumer = parse(read('templates/workflow.yml'));
+  const dogfood = parse(read('.github/workflows/issue-quality.yml'));
+
+  // Issue trigger types. (`on` stays a string key under YAML 1.2, not a bool.)
+  assert.deepEqual(consumer.on.issues.types, dogfood.on.issues.types);
+
+  // Permissions: both write issues; the dogfood additionally reads contents for
+  // `actions/checkout` (the known, tolerated difference).
+  assert.equal(consumer.permissions.issues, 'write');
+  assert.equal(dogfood.permissions.issues, 'write');
+  assert.equal(dogfood.permissions.contents, 'read');
+  assert.equal(consumer.permissions.contents, undefined);
+
+  // Concurrency and the job `if:` filter must be byte-identical.
+  assert.deepEqual(consumer.concurrency, dogfood.concurrency);
+  assert.equal(
+    consumer.jobs['quality-gate'].if,
+    dogfood.jobs['quality-gate'].if,
+  );
 });
