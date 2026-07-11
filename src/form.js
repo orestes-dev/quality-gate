@@ -27,14 +27,6 @@ const FORM_PATH = resolve(HERE, "..", ".github", "ISSUE_TEMPLATE", "task.yml");
 const INPUT_TYPES = new Set(["input", "textarea", "dropdown"]);
 
 /**
- * Parse an Issue Form into an ordered field list. Throw on an unusable form:
- * degrading to "no fields" would pass every issue unchecked.
- * @param {string} yamlText - Raw Issue Form YAML.
- * @returns {Field[]} The input fields, in form order.
- * @throws {Error} When the form has no body, no input fields, or a field
- *   missing an id or label.
- */
-/**
  * Throw if any two fields share the same value for `key`.
  * @param {Field[]} fields
  * @param {'id'|'label'} key
@@ -51,6 +43,14 @@ function assertUnique(fields, key) {
   }
 }
 
+/**
+ * Parse an Issue Form into an ordered field list. Throw on an unusable form:
+ * degrading to "no fields" would pass every issue unchecked.
+ * @param {string} yamlText - Raw Issue Form YAML.
+ * @returns {Field[]} The input fields, in form order.
+ * @throws {Error} When the form has no body, no input fields, a field missing
+ *   an id or label, or a duplicated field id or label.
+ */
 export function parseForm(yamlText) {
   const doc = parse(yamlText);
   if (!doc || !Array.isArray(doc.body)) {
