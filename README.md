@@ -194,5 +194,5 @@ flowchart TD
 ## Architecture
 
 Structure is read from the Issue Form at runtime; rules the form can't express
-live in `src/schema.js`. [`CONTEXT.md`](CONTEXT.md) is the domain glossary:
+live in `src/rules.js`. [`CONTEXT.md`](CONTEXT.md) is the domain glossary:
 Issue Form, structure, field, section, rule, check, scorecard, override.

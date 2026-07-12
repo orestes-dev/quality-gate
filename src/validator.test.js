@@ -13,7 +13,8 @@ import {
   warnings,
   checkTitle,
 } from "./validator.js";
-import { LABEL, STATUS, RULES } from "./schema.js";
+import { RULES } from "./rules.js";
+import { LABEL, STATUS } from "./constants.js";
 import { loadForm } from "./form.js";
 import { goodBody as good } from "./fixtures.js";
 
@@ -299,7 +300,7 @@ test("a bad title fails the whole issue even when the body is clean", () => {
   assert.equal(labelFor(result), LABEL.FAILING);
 });
 
-// RULES (schema.js) and the input fields (Issue Form) must be in bijection:
+// RULES (rules.js) and the input fields (Issue Form) must be in bijection:
 // every rule maps to a real field, and every field has a rule. An orphaned rule
 // (typo'd id, deleted field) or an unruled field fails CI here.
 test("RULES keys are exactly the Issue Form input-field ids", () => {

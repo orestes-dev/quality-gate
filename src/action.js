@@ -19,7 +19,7 @@ import {
   COMMENT_MARKER,
   OVERRIDE_LABEL,
   OVERRIDE_HEADING,
-} from "./schema.js";
+} from "./constants.js";
 
 /** @typedef {import('./validator.js').Scorecard} Scorecard */
 /** @typedef {import('./github.js').GitHub} GitHub */

@@ -1,19 +1,13 @@
 // Deterministic, dependency-free validator. The issue body is parsed with plain
 // string ops (no regex) into `### <label>` sections.
 
-import {
-  RULES,
-  NO_RESPONSE,
-  LABEL,
-  STATUS,
-  OVERRIDE_HEADING,
-  CONVENTIONAL_COMMIT_TYPES,
-} from "./schema.js";
+import { RULES, CONVENTIONAL_COMMIT_TYPES } from "./rules.js";
+import { NO_RESPONSE, LABEL, STATUS, OVERRIDE_HEADING } from "./constants.js";
 import { loadForm } from "./form.js";
 
 /**
  * @typedef {import('./form.js').Field} Field
- * @typedef {import('./schema.js').Rule} Rule
+ * @typedef {import('./rules.js').Rule} Rule
  */
 
 /**

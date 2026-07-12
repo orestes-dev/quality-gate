@@ -8,7 +8,7 @@ import { parse } from "yaml";
 import { run } from "./action.js";
 import { validate } from "./validator.js";
 import { renderComment } from "./report.js";
-import { LABEL, OVERRIDE_LABEL, OVERRIDE_HEADING } from "./schema.js";
+import { LABEL, OVERRIDE_LABEL, OVERRIDE_HEADING } from "./constants.js";
 import { goodBody } from "./fixtures.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");

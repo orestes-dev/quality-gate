@@ -22,7 +22,7 @@ The issue's one-line summary, validated (not a field, since the form doesn't own
 A `### <heading>` block in a submitted issue body. GitHub renders each field's heading as the section heading; the validator parses sections back out to check them. A section is the rendered form of a field.
 
 **Rule**:
-A constraint applied to a field that the Issue Form cannot express: minimum/maximum length, checklist-item requirement, warn-if-empty on an optional field, or which sizes are too large to land. Owned by `schema.js`, keyed by field `id`, and joined to the structure at runtime.
+A constraint applied to a field that the Issue Form cannot express: minimum/maximum length, checklist-item requirement, warn-if-empty on an optional field, or which sizes are too large to land. Owned by `rules.js`, keyed by field `id`, and joined to the structure at runtime.
 _Avoid_: Validation, constraint, config.
 
 **Check**:
@@ -54,7 +54,7 @@ A restatement deliberately left in place because collapsing it costs more than i
 
 **Dev**: If the Issue Form owns the structure, where does "Context must be at least 30 characters" live?
 
-**Domain expert**: That's a rule, not structure. The form only says Context is a required field; the 30-character floor is a rule in `schema.js`, keyed to the Context field's id. We join the two at runtime.
+**Domain expert**: That's a rule, not structure. The form only says Context is a required field; the 30-character floor is a rule in `rules.js`, keyed to the Context field's id. We join the two at runtime.
 
 **Dev**: And if someone renames the Context field's heading in the form?
 

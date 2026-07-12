@@ -2,7 +2,7 @@
 // A single server-side search query filters to exactly those, so a swept issue
 // drops out on the next run; re-running drains a backlog past the 1000-result cap.
 
-import { LABEL } from "./schema.js";
+import { LABEL } from "./constants.js";
 import { run } from "./action.js";
 
 /** @typedef {import('./github.js').GitHub} GitHub */

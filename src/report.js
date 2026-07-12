@@ -6,7 +6,7 @@ import {
   STATUS,
   OVERRIDE_LABEL,
   OVERRIDE_HEADING,
-} from "./schema.js";
+} from "./constants.js";
 import { worstStatus } from "./validator.js";
 
 /** @typedef {import('./validator.js').Check} Check */

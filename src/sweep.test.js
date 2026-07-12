@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { sweepIssues, buildQuery } from "./sweep.js";
-import { LABEL } from "./schema.js";
+import { LABEL } from "./constants.js";
 import { goodBody } from "./fixtures.js";
 
 const failingBody = goodBody.replace("### Size", "### Size\n\nL\n");
