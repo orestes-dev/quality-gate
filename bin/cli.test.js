@@ -17,6 +17,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = join(ROOT, "bin", "cli.js");
 
 const FORM = join(".github", "ISSUE_TEMPLATE", "task.yml");
+const PR_FORM = join(".github", "PULL_REQUEST_TEMPLATE.md");
+const PR_WORKFLOW = join(".github", "workflows", "pr-quality.yml");
 
 // Run `cli.js init` (plus any extra args) with cwd set to `dir`.
 function runInit(dir, ...args) {
@@ -44,6 +46,39 @@ test("init warns and still scaffolds when cwd is not a git root", () => {
     assert.ok(
       existsSync(join(dir, ".github", "workflows", "issue-quality.yml")),
     );
+    assert.ok(existsSync(join(dir, PR_FORM)));
+    assert.ok(existsSync(join(dir, PR_WORKFLOW)));
+  });
+});
+
+test("init prints the Suggested rule naming both Forms and validate-pr, writing it nowhere", () => {
+  withTempDir((dir) => {
+    const { status, stdout } = runInit(dir);
+    assert.equal(status, 0);
+    assert.match(stdout, /Suggested rule/);
+    assert.match(stdout, /ISSUE_TEMPLATE\/task\.yml/);
+    assert.match(stdout, /PULL_REQUEST_TEMPLATE\.md/);
+    assert.match(stdout, /\bvalidate\b/);
+    assert.match(stdout, /validate-pr/);
+    // Stdout-only: no rules file is written into the repo.
+    assert.ok(!existsSync(join(dir, "AGENTS.md")));
+    assert.ok(!existsSync(join(dir, "CLAUDE.md")));
+  });
+});
+
+test("init --force upgrades a drifted PR Form", () => {
+  withTempDir((dir) => {
+    runInit(dir);
+    const prForm = join(dir, PR_FORM);
+    const canonical = readFileSync(prForm, "utf8");
+    writeFileSync(prForm, "locally edited\n");
+    const plain = runInit(dir);
+    assert.equal(plain.status, 1);
+    assert.match(plain.stdout, /stale\s+.*PULL_REQUEST_TEMPLATE\.md/);
+    const forced = runInit(dir, "--force");
+    assert.equal(forced.status, 0);
+    assert.match(forced.stdout, /update\s+.*PULL_REQUEST_TEMPLATE\.md/);
+    assert.equal(readFileSync(prForm, "utf8"), canonical);
   });
 });
 

@@ -1,5 +1,6 @@
-// `init`: scaffold the Issue Form + thin workflow into the current repo, and
-// upgrade drifted copies in place under `--force`.
+// `init`: scaffold the Issue Form + PR Form and their thin workflows into the
+// current repo, upgrade drifted copies in place under `--force`, and print the
+// Suggested rule to stdout (written to no file).
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -18,6 +19,15 @@ const TEMPLATES = [
     from: join(ROOT, "templates", "workflow.yml"),
     to: join(".github", "workflows", "issue-quality.yml"),
   },
+  {
+    // Markdown PR Form: both the GitHub rendering and the agent-facing one.
+    from: join(ROOT, ".github", "PULL_REQUEST_TEMPLATE.md"),
+    to: join(".github", "PULL_REQUEST_TEMPLATE.md"),
+  },
+  {
+    from: join(ROOT, "templates", "pr-workflow.yml"),
+    to: join(".github", "workflows", "pr-quality.yml"),
+  },
 ];
 
 // A destination is `absent`, byte-identical (`ok`), or `drift` (stale upstream
@@ -26,6 +36,28 @@ const TEMPLATES = [
 const ABSENT = "absent";
 const OK = "ok";
 const DRIFT = "drift";
+
+// Agent-guidance snippet printed to stdout for the operator to paste into their
+// own agent-rules file (AGENTS.md, CLAUDE.md, editor rules). `init` never writes
+// it anywhere, so it cannot clobber a file it does not own. It names both Forms
+// and the matching pre-flight command that catches hard errors before the object
+// exists on GitHub.
+const SUGGESTED_RULE = `Suggested rule (paste into AGENTS.md, CLAUDE.md, or your editor rules; init
+prints this and writes it nowhere):
+
+  When opening an issue in this repo, fill every section of the Issue Form
+  (.github/ISSUE_TEMPLATE/task.yml), then pre-flight validate the drafted body
+  before \`gh issue create\`:
+
+      npx github:orestes-dev/quality-gate validate <body-file> --title "<title>"
+
+  When opening a pull request, fill every required section of the PR Form
+  (.github/PULL_REQUEST_TEMPLATE.md) — Summary, Verification, Divergence — then
+  pre-flight validate the drafted body before \`gh pr create\`:
+
+      npx github:orestes-dev/quality-gate validate-pr <body-file> --title "<title>"
+
+  Fix any hard errors (the command exits 1) before creating the object.`;
 
 /**
  * Classify each template's destination against the bundled source by exact
@@ -43,12 +75,14 @@ function classify() {
 }
 
 /**
- * Copy the Issue Form and workflow into the current working directory.
+ * Copy the Issue Form, PR Form, and their workflows into the current working
+ * directory, then print the Suggested rule to stdout.
  *
  * Absent files are created. Byte-identical files are left untouched (`init` is
  * idempotent). A drifted file — stale or locally customized — makes a plain run
  * a write-nothing report that exits 1; re-run with `--force` to overwrite only
- * the files that differ. Warns (but proceeds) when not at a repo root.
+ * the files that differ. Warns (but proceeds) when not at a repo root. The
+ * Suggested rule is printed on success and written to no file.
  * @param {string[]} [argv] - Remaining CLI args; `--force` upgrades in place.
  * @returns {void}
  */
@@ -95,8 +129,10 @@ export function init(argv = []) {
   }
 
   console.log(
-    "\nDone. Commit both files to opt this repo into the issue quality gate.\n" +
-      "The gate only labels issues going forward. To backfill labels + scorecards " +
+    "\nDone. Commit these files to opt this repo into the issue and PR quality gates.\n" +
+      "The issue gate only labels issues going forward. To backfill labels + scorecards " +
       "onto the existing open backlog, run: quality-gate sweep",
   );
+
+  console.log(`\n${SUGGESTED_RULE}`);
 }

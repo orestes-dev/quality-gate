@@ -18,7 +18,8 @@ section and [`CONTEXT.md`](CONTEXT.md).
   signal for downstream automation.
 - **Manual override**: a labelled escape hatch with a required written rationale.
 - **One-command opt-in**: `npx github:orestes-dev/quality-gate init` drops
-  the Issue Form + workflow; no per-repo config.
+  the Issue Form + PR Form and their workflows, and prints a Suggested rule to
+  paste into your agent rules; no per-repo config.
 - **Shared pre-flight validator**: run the same checks locally before
   `gh issue create`.
 
@@ -106,18 +107,26 @@ ready labels explicitly.
 npx github:orestes-dev/quality-gate init
 ```
 
-Run from the repo root. This drops two files, which together are the opt-in:
+Run from the repo root. This drops four files, which together are the opt-in:
 
 - `.github/ISSUE_TEMPLATE/task.yml`: the Issue Form (canonical schema).
 - `.github/workflows/issue-quality.yml`: a thin workflow calling the shared
-  Action at `@main`.
+  Action at `@main` for the issue gate.
+- `.github/PULL_REQUEST_TEMPLATE.md`: the PR Form (required sections).
+- `.github/workflows/pr-quality.yml`: a thin workflow calling the shared Action
+  at `@main` for the PR gate (merge-blocking).
 
-Commit both. Re-running `init` later is safe: unchanged files are left alone. If
-a bundled template has moved on and your copy is stale (or you edited it
-locally), `init` writes nothing and exits 1, listing what drifted. Re-run
-`init --force` to overwrite the drifted files in place; since both are committed,
-`git diff` afterwards shows exactly what changed and lets you restore any local
-edits.
+Commit all four. `init` then prints a Suggested rule to stdout: an agent-guidance
+snippet naming both Forms and the matching pre-flight `validate` / `validate-pr`
+step, for you to paste into your own agent-rules file (`AGENTS.md`, `CLAUDE.md`,
+editor rules). `init` writes it to no file, so it never clobbers a file it does
+not own.
+
+Re-running `init` later is safe: unchanged files are left alone. If a bundled
+template has moved on and your copy is stale (or you edited it locally), `init`
+writes nothing and exits 1, listing what drifted. Re-run `init --force` to
+overwrite the drifted files in place; since they are committed, `git diff`
+afterwards shows exactly what changed and lets you restore any local edits.
 
 CI runs on `issues: opened` / `edited` always, and on `labeled` /
 `unlabeled` only when a human touches `override:issue-quality` or an
