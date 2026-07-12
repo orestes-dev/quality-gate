@@ -1,5 +1,7 @@
 // Deterministic, dependency-free validator. The issue body is parsed with plain
-// string ops (no regex) into `### <label>` sections.
+// string ops (no regex) into `### <label>` sections. Headings inside fenced code
+// blocks (``` or ~~~) are skipped, so a schema heading pasted into a repro can't
+// mis-split the body.
 
 import { RULES, CONVENTIONAL_COMMIT_TYPES } from "./rules.js";
 import { NO_RESPONSE, LABEL, STATUS, OVERRIDE_HEADING } from "./constants.js";
@@ -62,7 +64,31 @@ function parseHeading(line) {
 }
 
 /**
- * Split a body into a { heading: text } map on the known headings.
+ * A fenced-code-block delimiter: a run of 3+ backticks or tildes, indented at
+ * most 3 spaces, followed only by an info string. Returns the run's fence
+ * character and length, or null when the line isn't a fence.
+ * @param {string} line
+ * @returns {{ char: string, len: number, info: string }|null}
+ */
+function parseFence(line) {
+  let indent = 0;
+  while (indent < line.length && line[indent] === " ") indent += 1;
+  if (indent > 3) return null;
+  const char = line[indent];
+  if (char !== "`" && char !== "~") return null;
+  let len = 0;
+  while (line[indent + len] === char) len += 1;
+  if (len < 3) return null;
+  const info = line.slice(indent + len).trim();
+  // A backtick info string can't contain a backtick (CommonMark), so such a line
+  // isn't an opening fence.
+  if (char === "`" && info.includes("`")) return null;
+  return { char, len, info };
+}
+
+/**
+ * Split a body into a { heading: text } map on the known headings, skipping any
+ * heading inside a fenced code block.
  * @param {string} body
  * @returns {Record<string, string>}
  */
@@ -73,6 +99,8 @@ export function parseSections(body) {
   let current = null;
   /** @type {string[]} */
   let buffer = [];
+  /** @type {{ char: string, len: number, info: string }|null} */
+  let fence = null;
 
   const flush = () => {
     if (current !== null) sections[current] = buffer.join("\n").trim();
@@ -80,6 +108,30 @@ export function parseSections(body) {
 
   for (const rawLine of String(body ?? "").split("\n")) {
     const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    const marker = parseFence(line);
+
+    // Inside a fence: content only. A bare fence of the same character, at least
+    // as long as the opener, closes it.
+    if (fence !== null) {
+      if (
+        marker !== null &&
+        marker.char === fence.char &&
+        marker.len >= fence.len &&
+        marker.info === ""
+      ) {
+        fence = null;
+      }
+      if (current !== null) buffer.push(line);
+      continue;
+    }
+
+    // A fence opener is content, never a heading.
+    if (marker !== null) {
+      fence = marker;
+      if (current !== null) buffer.push(line);
+      continue;
+    }
+
     const heading = parseHeading(line);
     if (heading !== null && KNOWN_HEADINGS.has(heading)) {
       flush();

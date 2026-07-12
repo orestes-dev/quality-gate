@@ -174,22 +174,53 @@ test("a markdown heading inside a field does not split the section", () => {
   assert.deepEqual(failures(validate(body).checks), []);
 });
 
-// KNOWN LIMITATION: parseSections is not fence-aware, so a *schema* heading
-// (unlike the unknown `## configure` above) inside a code block still splits the
-// body. Pinned so a future fence-aware parser flips this deliberately, not by
-// accident.
-test("a schema heading inside a code block splits the section (known limitation)", () => {
+test("a schema heading inside a code block stays in the section (fence-aware)", () => {
+  const body = ["### Context", "", "```md", "### Size", "kept", "```"].join(
+    "\n",
+  );
+  const sections = parseSections(body);
+  assert.ok(sections.Context.includes("### Size"));
+  assert.ok(sections.Context.includes("kept"));
+  assert.equal(sections.Size, undefined);
+});
+
+test("tilde fences and closed fences are handled", () => {
   const body = [
     "### Context",
     "",
-    "```md",
+    "~~~",
     "### Size",
-    "swallowed",
-    "```",
+    "in tilde fence",
+    "~~~",
+    "",
+    "### Size",
+    "",
+    "S",
   ].join("\n");
   const sections = parseSections(body);
-  assert.ok(!sections.Context.includes("swallowed"));
-  assert.ok(sections.Size.includes("swallowed"));
+  assert.ok(sections.Context.includes("in tilde fence"));
+  assert.equal(sections.Size, "S");
+});
+
+test("a longer closing run and a mismatched fence char do not close the fence", () => {
+  const body = [
+    "### Context",
+    "",
+    "````",
+    "### Size",
+    "~~~",
+    "still inside the backtick fence",
+    "``````",
+    "",
+    "### Out of Scope",
+    "",
+    "after the fence",
+  ].join("\n");
+  const sections = parseSections(body);
+  assert.ok(sections.Context.includes("### Size"));
+  assert.ok(sections.Context.includes("still inside the backtick fence"));
+  assert.equal(sections.Size, undefined);
+  assert.equal(sections["Out of Scope"], "after the fence");
 });
 
 test("checklist items count with * and + bullets and a capital [X]", () => {
