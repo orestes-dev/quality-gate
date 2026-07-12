@@ -32,4 +32,4 @@ jobs:
        (github.event.label.name == 'override:issue-quality' ||
         startsWith(github.event.label.name, 'issue-quality:')))
     steps:
-      - uses: orestes-dev/issue-quality-gate@main
+      - uses: orestes-dev/quality-gate@main
