@@ -27,6 +27,18 @@ const SEARCH_MAX_PAGES = 10;
  */
 
 /**
+ * A linked issue a PR closes on merge, from GitHub's native
+ * `closingIssuesReferences`. `sameRepo` is resolved here (against the client's
+ * own owner/repo) so downstream readiness logic stays free of repo context.
+ * @typedef {object} LinkedIssue
+ * @property {number} number
+ * @property {string} owner - The linked issue's repository owner login.
+ * @property {string} repo - The linked issue's repository name.
+ * @property {boolean} sameRepo - Whether it lives in the PR's own repository.
+ * @property {string[]} labels - The linked issue's label names.
+ */
+
+/**
  * Strip any trailing slashes from a URL so path concatenation stays clean.
  * @param {string} url
  * @returns {string}
@@ -53,6 +65,20 @@ export class GitHub {
   }
 
   /**
+   * Common request headers for both the REST and GraphQL endpoints.
+   * @returns {Record<string, string>}
+   */
+  #headers() {
+    return {
+      Authorization: `Bearer ${this.token}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "Content-Type": "application/json",
+      "User-Agent": "quality-gate",
+    };
+  }
+
+  /**
    * Issue a timeout-bounded REST request.
    * @param {string} method - HTTP method.
    * @param {string} path - API path, appended to the base URL.
@@ -62,17 +88,36 @@ export class GitHub {
   async #request(method, path, body) {
     const res = await fetch(`${this.apiUrl}${path}`, {
       method,
-      headers: {
-        Authorization: `Bearer ${this.token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "Content-Type": "application/json",
-        "User-Agent": "quality-gate",
-      },
+      headers: this.#headers(),
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     return res;
+  }
+
+  /**
+   * Issue a timeout-bounded GraphQL request, returning the `data` payload. Used
+   * for `closingIssuesReferences`, which the REST API does not expose. Throws on
+   * a transport error or any GraphQL `errors` entry (fail loud).
+   * @param {string} query - The GraphQL query document.
+   * @param {Record<string, unknown>} variables - Query variables.
+   * @returns {Promise<any>} The `data` object.
+   */
+  async #graphql(query, variables) {
+    const res = await fetch(`${this.apiUrl}/graphql`, {
+      method: "POST",
+      headers: this.#headers(),
+      body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`GraphQL request failed: ${res.status}`);
+    const json = /** @type {{data?: any, errors?: unknown}} */ (
+      await res.json()
+    );
+    if (json.errors) {
+      throw new Error(`GraphQL errors: ${JSON.stringify(json.errors)}`);
+    }
+    return json.data;
   }
 
   /**
@@ -113,6 +158,50 @@ export class GitHub {
       await res.json()
     );
     return { ...pr, author: pr.user?.login ?? "" };
+  }
+
+  /**
+   * The issues a PR closes on merge, from GitHub's native
+   * `closingIssuesReferences` (populated by `Closes #N` or the Development
+   * sidebar), not a parsed body field. Each node's repository resolves
+   * `sameRepo` against this client's owner/repo, and its labels ride along so a
+   * caller can judge readiness without a second round trip.
+   * @param {number} prNumber
+   * @returns {Promise<LinkedIssue[]>}
+   */
+  async getLinkedIssues(prNumber) {
+    const query = `query($owner: String!, $repo: String!, $number: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $number) {
+          closingIssuesReferences(first: 50) {
+            nodes {
+              number
+              repository { owner { login } name }
+              labels(first: 50) { nodes { name } }
+            }
+          }
+        }
+      }
+    }`;
+    const data = await this.#graphql(query, {
+      owner: this.owner,
+      repo: this.repo,
+      number: prNumber,
+    });
+    /** @type {Array<{number: number, repository: {owner: {login: string}, name: string}, labels: {nodes: Array<{name: string}>}}>} */
+    const nodes =
+      data?.repository?.pullRequest?.closingIssuesReferences?.nodes ?? [];
+    return nodes.map((node) => {
+      const owner = node.repository.owner.login;
+      const repo = node.repository.name;
+      return {
+        number: node.number,
+        owner,
+        repo,
+        sameRepo: owner === this.owner && repo === this.repo,
+        labels: (node.labels?.nodes ?? []).map((l) => l.name),
+      };
+    });
   }
 
   /**

@@ -226,6 +226,14 @@ events. It checks structural presence, never conformance:
   checked. A checked flag with no written rationale hard-fails; unchecked (or
   checked with a rationale) passes. The gate checks the rationale is present,
   never whether the code conforms to the issue.
+- **Linked-issue readiness**: every issue the PR closes (GitHub's native
+  `closingIssuesReferences`, from `Closes #N` or the Development sidebar) must be
+  ready, the same `issue-quality:pass` / `warning` / `override:issue-quality`
+  union a consumer uses to pick up an issue. A PR that closes zero same-repo
+  issues hard-fails, since each closed issue is a spec it claims to satisfy.
+  Cross-repo links are ignored (the token can't read another repo's labels) and
+  the scorecard says so. The check re-runs only on PR events, so when a linked
+  issue flips to ready afterward the scorecard tells you to re-run it.
 
 The PR structure is defined by a code descriptor (`src/pr-validator.js`), the
 source of truth the Markdown template is drift-tested against. Any error (a

@@ -36,6 +36,11 @@ export const prGate = {
   hardFail: true,
   exempt: (object) => (object.author ?? "").endsWith(BOT_SUFFIX),
   getNumber: (event) => event.pull_request?.number ?? event.number,
-  getObject: (gh, number) => gh.getPullRequest(number),
-  validate: (object) => validatePr(object.body || "", object.title),
+  getObject: async (gh, number) => {
+    const pr = await gh.getPullRequest(number);
+    const linkedIssues = await gh.getLinkedIssues(number);
+    return { ...pr, linkedIssues };
+  },
+  validate: (object) =>
+    validatePr(object.body || "", object.title, object.linkedIssues),
 };

@@ -13,6 +13,8 @@ import {
   PR_OVERRIDE_LABEL,
   OVERRIDE_HEADING,
   STATUS,
+  LABEL,
+  OVERRIDE_LABEL,
 } from "./constants.js";
 import { prGate } from "./gates/pr.js";
 
@@ -38,14 +40,29 @@ const missingVerification = ["## Summary", "", "Debounce the search.", ""].join(
 
 const goodTitle = "feat: debounce the search input";
 
+// A same-repo linked issue that is ready, so a structurally-clean PR passes the
+// transitive readiness check too.
+const readyLinked = [
+  {
+    number: 7,
+    owner: "acme",
+    repo: "app",
+    sameRepo: true,
+    labels: [LABEL.PASS],
+  },
+];
+
 // A GitHub client stub that records every mutating call. Reads (getPullRequest,
-// findComment) are not recorded; only writes are.
-function fakeGh({ pr, comments = [] }) {
+// getLinkedIssues, findComment) are not recorded; only writes are.
+function fakeGh({ pr, comments = [], linked = [] }) {
   const calls = [];
   return {
     calls,
     async getPullRequest() {
       return pr;
+    },
+    async getLinkedIssues() {
+      return linked;
     },
     async ensureLabel(name, color, description) {
       calls.push(["ensureLabel", name, color, description]);
@@ -155,6 +172,80 @@ test("validatePr passes an unchecked Divergence flag with only guidance left", (
   assert.equal(worst(checks), STATUS.PASS);
 });
 
+// --- validatePr transitive linked-issue readiness ---
+
+/**
+ * @param {number} number
+ * @param {string[]} labels
+ * @param {boolean} [sameRepo]
+ * @returns {import('./github.js').LinkedIssue}
+ */
+const linked = (number, labels, sameRepo = true) => ({
+  number,
+  owner: "acme",
+  repo: sameRepo ? "app" : "other",
+  sameRepo,
+  labels,
+});
+
+const linkedCheck = (checks) => checks.find((c) => c.key === "linked-issues");
+
+test("validatePr omits the readiness check when no linkedIssues are supplied", () => {
+  const { checks } = validatePr(goodBody, goodTitle);
+  assert.equal(linkedCheck(checks), undefined);
+});
+
+test("validatePr passes when every same-repo linked issue is ready", () => {
+  for (const label of [LABEL.PASS, LABEL.WARNING, OVERRIDE_LABEL]) {
+    const { checks } = validatePr(goodBody, goodTitle, [linked(7, [label])]);
+    assert.equal(linkedCheck(checks).status, STATUS.PASS, `ready via ${label}`);
+    assert.equal(worst(checks), STATUS.PASS);
+  }
+});
+
+test("validatePr fails when a same-repo linked issue is not ready", () => {
+  const { checks } = validatePr(goodBody, goodTitle, [
+    linked(7, [LABEL.PASS]),
+    linked(8, [LABEL.FAILING]),
+  ]);
+  const c = linkedCheck(checks);
+  assert.equal(c.status, STATUS.FAIL);
+  assert.match(c.message, /#8/);
+  assert.doesNotMatch(c.message, /#7/);
+  assert.match(c.message, /re-run this check/);
+});
+
+test("validatePr treats an un-gated (label-less) linked issue as not ready", () => {
+  const { checks } = validatePr(goodBody, goodTitle, [linked(9, [])]);
+  assert.equal(linkedCheck(checks).status, STATUS.FAIL);
+});
+
+test("validatePr hard-fails a PR with zero same-repo linked issues", () => {
+  const { checks } = validatePr(goodBody, goodTitle, []);
+  const c = linkedCheck(checks);
+  assert.equal(c.status, STATUS.FAIL);
+  assert.match(c.message, /no same-repo linked issue/);
+});
+
+test("validatePr ignores cross-repo links but notes them, still failing on zero same-repo", () => {
+  const { checks } = validatePr(goodBody, goodTitle, [
+    linked(100, [LABEL.PASS], false),
+  ]);
+  const c = linkedCheck(checks);
+  assert.equal(c.status, STATUS.FAIL);
+  assert.match(c.message, /1 cross-repo link ignored/);
+});
+
+test("validatePr passes on a ready same-repo issue while noting an ignored cross-repo link", () => {
+  const { checks } = validatePr(goodBody, goodTitle, [
+    linked(7, [LABEL.PASS]),
+    linked(100, [LABEL.FAILING], false),
+  ]);
+  const c = linkedCheck(checks);
+  assert.equal(c.status, STATUS.PASS);
+  assert.match(c.message, /1 cross-repo link ignored/);
+});
+
 // --- run() over the PR gate: pass / fail / override / bot ---
 
 test("a clean PR gets the pass label and a scorecard comment", async () => {
@@ -167,6 +258,7 @@ test("a clean PR gets the pass label and a scorecard comment", async () => {
       author: "octocat",
     },
     comments: [],
+    linked: readyLinked,
   });
   const { summary, status } = await run({ gh, event, gate });
   assert.equal(status, STATUS.PASS);
@@ -177,6 +269,29 @@ test("a clean PR gets the pass label and a scorecard comment", async () => {
   const created = gh.calls.find((c) => c[0] === "createComment");
   assert.ok(created, "expected a scorecard comment");
   assert.ok(created[2].includes("PR Quality Checklist"));
+});
+
+test("a structurally-clean PR fails when a linked issue is not ready", async () => {
+  const gh = fakeGh({
+    pr: {
+      number: 42,
+      title: goodTitle,
+      body: goodBody,
+      labels: [],
+      author: "octocat",
+    },
+    comments: [],
+    linked: [
+      { number: 8, owner: "acme", repo: "app", sameRepo: true, labels: [] },
+    ],
+  });
+  const { status } = await run({ gh, event, gate });
+  assert.equal(status, STATUS.FAIL);
+  assert.ok(
+    gh.calls.some(
+      (c) => c[0] === "addLabels" && c[2].includes(PR_LABEL.FAILING),
+    ),
+  );
 });
 
 test("a PR missing a required section gets the failing label and status", async () => {
