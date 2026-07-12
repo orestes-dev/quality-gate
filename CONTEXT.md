@@ -29,14 +29,14 @@ _Avoid_: Validation, constraint, config.
 One evaluated rule or structural requirement against a submitted section, producing a pass, warning, or fail with a message. Checks are **additive**: each fires only when its trigger is present (a required field, a dropdown's options, a length rule, a checklist rule).
 
 **Scorecard**:
-The single bot comment on an issue listing every check and its outcome, kept in sync on each run. Present on every result, pass included, so a clean issue gets confirmation rather than silence.
+The single bot comment on an issue listing every check and its outcome, kept in sync on each run. Present on every result, pass and override included, so a clean issue gets confirmation rather than silence and an overridden one still shows what the gate found. No run leaves an issue without one.
 _Avoid_: Report (reserved for the CLI's terminal output), comment.
 
 **Quality Label**:
 Exactly one of `issue-quality:pass` / `issue-quality:warning` / `issue-quality:failing`, mutually exclusive, reflecting the worst check outcome. The gate's machine-readable verdict.
 
 **Override**:
-The manual escape hatch: the `override:issue-quality` label plus a written `## Override rationale` section bypasses the gate. Neither alone suffices.
+The manual escape hatch: the `override:issue-quality` label plus a written `## Override rationale` section bypasses the gate. Neither alone suffices. It strips the quality label but not the scorecard, which stays with a banner acknowledging the bypass.
 
 **Sweep**:
 A local, on-demand backfill that applies quality labels and scorecards across a repo's existing open issues, using the operator's own `gh` session rather than CI credentials.

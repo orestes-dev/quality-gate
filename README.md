@@ -52,7 +52,8 @@ The worst per-check status sets one mutually-exclusive label:
 | 0 errors, ≥ 1 warning | `issue-quality:warning` |
 | clean                 | `issue-quality:pass`    |
 
-Every run upserts the scorecard comment (removed only by a completed override):
+Every run upserts the scorecard comment, an override included: no run ever
+leaves an issue without one.
 
 ```md
 ### Issue Quality Checklist
@@ -70,8 +71,10 @@ Every run upserts the scorecard comment (removed only by a completed override):
 ### Override
 
 Set `override:issue-quality` **and** add a non-empty `## Override rationale`
-section to bypass: all quality labels and the comment are stripped. The label
-without a rationale does not bypass; it raises a warning to write one.
+section to bypass: the quality label is stripped, but the scorecard stays and
+leads with a banner acknowledging the bypass, so the record of what the gate
+found survives the override. The label without a rationale does not bypass; it
+raises a warning to write one.
 
 ## Opting a repo in
 
@@ -175,7 +178,7 @@ Exits non-zero on errors. One validator backs both CI and pre-flight. Without
 flowchart TD
     A[issue opened / edited / labeled / unlabeled] --> B[fetch issue fresh from API]
     B --> C{override label + rationale?}
-    C -->|yes| D[strip quality labels + comment] --> Z[done]
+    C -->|yes| D[strip quality label + upsert scorecard with override banner] --> Z[done]
     C -->|no| E[validate: title format, presence, length, AC checklist, size]
     E --> F[label by worst status + upsert scorecard comment] --> Z
 ```
