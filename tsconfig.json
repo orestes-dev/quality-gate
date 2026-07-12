@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "module": "nodenext",
+    "target": "es2022",
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true
+  },
+  "include": ["src/**/*.js", "bin/**/*.js"],
+  "exclude": ["**/*.test.js"]
+}

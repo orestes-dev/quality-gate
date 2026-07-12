@@ -67,8 +67,11 @@ function parseHeading(line) {
  * @returns {Record<string, string>}
  */
 export function parseSections(body) {
+  /** @type {Record<string, string>} */
   const sections = {};
+  /** @type {string|null} */
   let current = null;
+  /** @type {string[]} */
   let buffer = [];
 
   const flush = () => {
@@ -150,12 +153,12 @@ const check = (key, label, status, message) => ({
  * Dropdown: membership in the form's options, plus RULES `blocking` values too
  * big to land as one issue. Both hard.
  * @param {Field} field
- * @param {Rule} [rule]
+ * @param {Rule|undefined} rule
  * @param {string} value
  * @returns {Check}
  */
 function checkEnum(field, rule, value) {
-  const { id, label, options } = field;
+  const { id, label, options = [] } = field;
   if (!options.includes(value)) {
     return check(
       id,
@@ -204,7 +207,7 @@ function checkChecklist(field, rule, value) {
 /**
  * Prose: `minLength` is hard, `maxLength` warning-only. Worst status wins.
  * @param {Field} field
- * @param {Rule} [rule]
+ * @param {Rule|undefined} rule
  * @param {string} value
  * @returns {Check}
  */

@@ -10,6 +10,23 @@ const SEARCH_PER_PAGE = 100;
 const SEARCH_MAX_PAGES = 10;
 
 /**
+ * The subset of an issue resource the gate reads.
+ * @typedef {object} Issue
+ * @property {number} number
+ * @property {string} title
+ * @property {string} [body]
+ * @property {Array<string|{name: string}>} [labels]
+ */
+
+/**
+ * The subset of a comment resource the gate reads.
+ * @typedef {object} Comment
+ * @property {number} id
+ * @property {string} body
+ * @property {{type?: string}} [user]
+ */
+
+/**
  * Strip any trailing slashes from a URL so path concatenation stays clean.
  * @param {string} url
  * @returns {string}
@@ -69,7 +86,7 @@ export class GitHub {
   /**
    * Fetch fresh; the webhook payload can't be trusted.
    * @param {number} issueNumber
-   * @returns {Promise<object>} The issue resource.
+   * @returns {Promise<Issue>} The issue resource.
    */
   async getIssue(issueNumber) {
     const res = await this.#request(
@@ -77,7 +94,7 @@ export class GitHub {
       `${this.#base()}/issues/${issueNumber}`,
     );
     if (!res.ok) throw new Error(`Failed to fetch issue: ${res.status}`);
-    return res.json();
+    return /** @type {Promise<Issue>} */ (res.json());
   }
 
   /**
@@ -144,8 +161,8 @@ export class GitHub {
    * First comment matching `predicate`, paging lazily. The gate comment is
    * created early, so it's usually on the first page.
    * @param {number} issueNumber
-   * @param {(comment: object) => boolean} predicate
-   * @returns {Promise<object|null>} The matching comment, or null if none.
+   * @param {(comment: Comment) => boolean} predicate
+   * @returns {Promise<Comment|null>} The matching comment, or null if none.
    */
   async findComment(issueNumber, predicate) {
     let page = 1;
@@ -155,7 +172,7 @@ export class GitHub {
         `${this.#base()}/issues/${issueNumber}/comments?per_page=100&page=${page}`,
       );
       if (!res.ok) throw new Error(`Failed to list comments: ${res.status}`);
-      const batch = await res.json();
+      const batch = /** @type {Comment[]} */ (await res.json());
       const hit = batch.find(predicate);
       if (hit) return hit;
       if (batch.length < 100) return null;
@@ -168,10 +185,11 @@ export class GitHub {
    * `totalCount` can exceed `items.length` when capped, letting the caller
    * detect a partial sweep. `is:issue` excludes PRs.
    * @param {string} qualifiers - Raw search qualifiers, e.g. `is:issue is:open`.
-   * @returns {Promise<{totalCount: number, items: object[]}>}
+   * @returns {Promise<{totalCount: number, items: Issue[]}>}
    */
   async searchIssues(qualifiers) {
     const q = `repo:${this.owner}/${this.repo} ${qualifiers}`;
+    /** @type {Issue[]} */
     const items = [];
     let totalCount = 0;
     for (let page = 1; page <= SEARCH_MAX_PAGES; page += 1) {
@@ -180,7 +198,9 @@ export class GitHub {
         `/search/issues?q=${encodeURIComponent(q)}&per_page=${SEARCH_PER_PAGE}&page=${page}`,
       );
       if (!res.ok) throw new Error(`Failed to search issues: ${res.status}`);
-      const body = await res.json();
+      const body = /** @type {{total_count: number, items: Issue[]}} */ (
+        await res.json()
+      );
       totalCount = body.total_count;
       items.push(...body.items);
       if (body.items.length < SEARCH_PER_PAGE) break;

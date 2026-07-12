@@ -37,7 +37,8 @@ export async function sweepIssues({ gh, log = () => {} }) {
       swept += 1;
     } catch (err) {
       failed.push(item.number);
-      log(`issue #${item.number}: ERROR ${err.message || err}`);
+      const message = err instanceof Error ? err.message : String(err);
+      log(`issue #${item.number}: ERROR ${message}`);
     }
   }
   return { swept, failed, totalCount, capped: items.length < totalCount };

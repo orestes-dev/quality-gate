@@ -25,8 +25,10 @@ function loadEvent() {
  */
 async function main() {
   const [owner, repo] = (process.env.GITHUB_REPOSITORY || "").split("/");
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) throw new Error("GITHUB_TOKEN is not set.");
   const gh = new GitHub({
-    token: process.env.GITHUB_TOKEN,
+    token,
     apiUrl: process.env.GITHUB_API_URL,
     owner,
     repo,

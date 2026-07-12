@@ -5,7 +5,12 @@
 // GitHub renders an empty optional field as this literal. Treat it as absent.
 export const NO_RESPONSE = "_No response_";
 
-// Per-check outcome, worst-wins across a field's rules.
+/**
+ * Per-check outcome, worst-wins across a field's rules.
+ * @typedef {'pass'|'warn'|'fail'} Status
+ */
+
+/** @type {{ PASS: 'pass', WARN: 'warn', FAIL: 'fail' }} */
 export const STATUS = { PASS: "pass", WARN: "warn", FAIL: "fail" };
 
 // Labels applied by the gate. Mutually exclusive.

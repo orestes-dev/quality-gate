@@ -22,12 +22,13 @@ import {
 
 /** @typedef {import('./validator.js').Scorecard} Scorecard */
 /** @typedef {import('./github.js').GitHub} GitHub */
+/** @typedef {import('./github.js').Comment} Comment */
 
 const ALL_QUALITY_LABELS = [LABEL.FAILING, LABEL.WARNING, LABEL.PASS];
 
 /**
  * Author must be a bot so a human who pastes the marker isn't adopted.
- * @param {object} c - A GitHub comment resource.
+ * @param {Comment} c - A GitHub comment resource.
  * @returns {boolean}
  */
 const isGateComment = (c) =>
@@ -95,7 +96,8 @@ async function syncComment(gh, issueNumber, result) {
  * event.
  * @param {object} params
  * @param {GitHub} params.gh
- * @param {object} params.event - The webhook event payload, carrying `.issue`.
+ * @param {{issue?: {number: number}}} params.event - The webhook event payload,
+ *   carrying `.issue`.
  * @returns {Promise<string>} A status string for logging.
  */
 export async function run({ gh, event }) {

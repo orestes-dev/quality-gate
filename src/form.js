@@ -17,6 +17,15 @@ import { parse } from "yaml";
  * @property {string[]|undefined} options - Dropdown choices; undefined otherwise.
  */
 
+/**
+ * One raw `body` entry as parsed from the Issue Form YAML, before validation.
+ * @typedef {object} FormElement
+ * @property {string} [id]
+ * @property {string} type
+ * @property {{label?: string, options?: string[]}} [attributes]
+ * @property {{required?: boolean}} [validations]
+ */
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 // This action's own canonical form. The composite action runs from its own
@@ -57,7 +66,7 @@ export function parseForm(yamlText) {
     throw new Error("Issue Form has no `body` list.");
   }
 
-  const fields = doc.body
+  const fields = /** @type {FormElement[]} */ (doc.body)
     .filter((el) => el && INPUT_TYPES.has(el.type))
     .map((el) => {
       const label = el.attributes?.label;
@@ -67,7 +76,7 @@ export function parseForm(yamlText) {
       return {
         id: el.id,
         label,
-        type: el.type,
+        type: /** @type {Field['type']} */ (el.type),
         required: el.validations?.required === true,
         options:
           el.type === "dropdown" ? (el.attributes?.options ?? []) : undefined,

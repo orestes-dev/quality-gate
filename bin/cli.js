@@ -36,7 +36,7 @@ function cmdValidate(args) {
 
 /**
  * Dispatch the sub-command named in argv.
- * @returns {void|Promise<void>}
+ * @returns {Promise<void>}
  */
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
