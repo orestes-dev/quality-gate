@@ -13,6 +13,7 @@
   "scripts": {
     "test": "node --test",
     "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky"
@@ -22,13 +23,20 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22",
+    "eslint": "^10.7.0",
+    "globals": "^17.7.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
     "prettier": "^3.9.5",
     "typescript": "^5"
   },
   "lint-staged": {
-    "*.{ts,js,mjs,cjs,md,yml,yaml,json}": "prettier --write"
+    "*.{ts,js,mjs,cjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{md,yml,yaml,json}": "prettier --write"
   }
 }
