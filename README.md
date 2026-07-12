@@ -1,4 +1,4 @@
-# issue-quality-gate
+# quality-gate
 
 A deterministic quality gate for GitHub issues, so they land well-scoped and
 actionable. Structural checks only: title format, presence, length, checklist
@@ -14,7 +14,7 @@ count, size enum.
   `issue-quality:warning` (non-blocking), `issue-quality:pass`, a filterable
   signal for downstream automation.
 - **Manual override**: a labelled escape hatch with a required written rationale.
-- **One-command opt-in**: `npx github:orestes-dev/issue-quality-gate init` drops
+- **One-command opt-in**: `npx github:orestes-dev/quality-gate init` drops
   the Issue Form + workflow; no per-repo config.
 - **Shared pre-flight validator**: run the same checks locally before
   `gh issue create`.
@@ -100,7 +100,7 @@ ready labels explicitly.
 ## Opting a repo in
 
 ```sh
-npx github:orestes-dev/issue-quality-gate init
+npx github:orestes-dev/quality-gate init
 ```
 
 Run from the repo root. This drops two files, which together are the opt-in:
@@ -137,7 +137,7 @@ Opt-in is going-forward only: an existing issue is validated the next time it is
 edited, so an untouched backlog stays unlabeled. To backfill on demand, run:
 
 ```sh
-npx github:orestes-dev/issue-quality-gate sweep
+npx github:orestes-dev/quality-gate sweep
 ```
 
 `sweep` labels + scorecards every **open** issue that has no `issue-quality:*`
@@ -164,7 +164,7 @@ Before `gh issue create`, run the same validator on a draft file. Pass
 `--title` to also check the title against the Conventional Commits format:
 
 ```sh
-npx github:orestes-dev/issue-quality-gate validate path/to/issue-body.md \
+npx github:orestes-dev/quality-gate validate path/to/issue-body.md \
   --title "feat(search): debounce the query input"
 ```
 
@@ -213,7 +213,7 @@ flowchart TD
 
 ## Notes
 
-- **`@main`, unpinned.** Consumers reference `orestes-dev/issue-quality-gate@main`,
+- **`@main`, unpinned.** Consumers reference `orestes-dev/quality-gate@main`,
   so rule changes propagate on the next run with no per-repo bump, accepting
   that a bad change affects every opted-in repo at once.
 - **Fixed schema.** No per-repo config or inputs, so the labels mean the same

@@ -97,6 +97,6 @@ export function init(argv = []) {
   console.log(
     "\nDone. Commit both files to opt this repo into the issue quality gate.\n" +
       "The gate only labels issues going forward. To backfill labels + scorecards " +
-      "onto the existing open backlog, run: issue-quality-gate sweep",
+      "onto the existing open backlog, run: quality-gate sweep",
   );
 }

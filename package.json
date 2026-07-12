@@ -1,8 +1,8 @@
 {
-  "name": "issue-quality-gate",
+  "name": "quality-gate",
   "version": "0.1.0",
   "private": true,
-  "description": "Deterministic quality gate for GitHub issues so they land well-scoped and actionable.",
+  "description": "Deterministic quality gate for GitHub issues and pull requests so work lands well-scoped and actionable.",
   "author": "Orestes Carracedo <orestes@orestes.io>",
   "type": "module",
   "packageManager": "yarn@4.16.0",

@@ -1,5 +1,7 @@
 // Renders a validation scorecard for the bot comment and CLI. Both show every
-// check, pass included.
+// check, pass included. The object-specific chrome (marker, heading, footers,
+// override banner) is injected as a `presentation`, so one renderer serves every
+// gate; `ISSUE_PRESENTATION` is the default and keeps the issue gate verbatim.
 
 import {
   COMMENT_MARKER,
@@ -11,34 +13,49 @@ import { worstStatus } from "./validator.js";
 
 /** @typedef {import('./validator.js').Check} Check */
 
+/**
+ * The object-specific chrome around a scorecard: the hidden comment marker, the
+ * scorecard heading, the CLI one-liner label, the per-status footers, and the
+ * override banner/footer. Injected so one renderer serves the issue and PR gates.
+ * @typedef {object} Presentation
+ * @property {string} marker - Hidden HTML comment identifying the bot comment.
+ * @property {string} heading - Scorecard `###` heading.
+ * @property {string} cliLabel - Terminal one-liner prefix, e.g. "Issue quality gate".
+ * @property {Record<'pass'|'warn'|'fail', string>} footers - Footer per worst status.
+ * @property {string} overrideBanner - Leading banner when the gate is overridden.
+ * @property {string} overrideFooter - Footer when the gate is overridden.
+ */
+
 const ICON = {
   [STATUS.PASS]: "✅",
   [STATUS.WARN]: "⚠️",
   [STATUS.FAIL]: "❌",
 };
 
-const FIX_FOOTER =
-  `> Fix the failing checks, or add the \`${OVERRIDE_LABEL}\` label with an ` +
-  `\`## ${OVERRIDE_HEADING}\` section in the issue body to bypass.`;
-const WARN_FOOTER = "> All required checks pass. Warnings are informational.";
-const PASS_FOOTER =
-  "> All checks pass. This issue meets the structural quality bar.";
-
-const FOOTER_BY_STATUS = {
-  [STATUS.FAIL]: FIX_FOOTER,
-  [STATUS.WARN]: WARN_FOOTER,
-  [STATUS.PASS]: PASS_FOOTER,
+// The issue gate's chrome, kept verbatim from before the seam existed. Also the
+// default presentation, so `renderComment(scorecard)` still renders an issue
+// scorecard with no caller changes.
+/** @type {Presentation} */
+export const ISSUE_PRESENTATION = {
+  marker: COMMENT_MARKER,
+  heading: "Issue Quality Checklist",
+  cliLabel: "Issue quality gate",
+  footers: {
+    [STATUS.FAIL]:
+      `> Fix the failing checks, or add the \`${OVERRIDE_LABEL}\` label with an ` +
+      `\`## ${OVERRIDE_HEADING}\` section in the issue body to bypass.`,
+    [STATUS.WARN]: "> All required checks pass. Warnings are informational.",
+    [STATUS.PASS]:
+      "> All checks pass. This issue meets the structural quality bar.",
+  },
+  overrideBanner:
+    `> ⏭️ **Gate overridden.** The \`${OVERRIDE_LABEL}\` label and an ` +
+    `\`## ${OVERRIDE_HEADING}\` section are both set, so no quality label is ` +
+    `applied. The checks below are advisory.`,
+  overrideFooter:
+    `> Remove the \`${OVERRIDE_LABEL}\` label or the \`## ${OVERRIDE_HEADING}\` ` +
+    `section to re-apply the gate.`,
 };
-
-// Shown instead of the status footer when the gate is overridden: the checks
-// below stay visible for the record, but they no longer gate.
-const OVERRIDE_BANNER =
-  `> ⏭️ **Gate overridden.** The \`${OVERRIDE_LABEL}\` label and an ` +
-  `\`## ${OVERRIDE_HEADING}\` section are both set, so no quality label is ` +
-  `applied. The checks below are advisory.`;
-const OVERRIDE_FOOTER =
-  `> Remove the \`${OVERRIDE_LABEL}\` label or the \`## ${OVERRIDE_HEADING}\` ` +
-  `section to re-apply the gate.`;
 
 // Terminal one-liner for the run's worst status.
 const CLI_STATUS_LABEL = {
@@ -48,38 +65,43 @@ const CLI_STATUS_LABEL = {
 };
 
 /**
- * The footer line for the worst status in the scorecard.
- * @param {Check[]} checks
- * @returns {string}
- */
-const footer = (checks) => FOOTER_BY_STATUS[worstStatus(checks)];
-
-/**
  * Bot-comment markdown, with the hidden marker for in-place updates. On an
  * override the scorecard still renders, leading with a banner that the gate is
  * bypassed, so every run leaves a comment behind.
  * @param {{checks: Check[]}} scorecard
- * @param {{overridden?: boolean}} [options]
+ * @param {{overridden?: boolean, presentation?: Presentation}} [options]
  * @returns {string}
  */
-export function renderComment({ checks }, { overridden = false } = {}) {
-  const lines = [COMMENT_MARKER, "### Issue Quality Checklist", ""];
-  if (overridden) lines.push(OVERRIDE_BANNER, "");
+export function renderComment(
+  { checks },
+  { overridden = false, presentation = ISSUE_PRESENTATION } = {},
+) {
+  const lines = [presentation.marker, `### ${presentation.heading}`, ""];
+  if (overridden) lines.push(presentation.overrideBanner, "");
   for (const c of checks) {
     lines.push(`- ${ICON[c.status]} **${c.label}**: ${c.message}`);
   }
-  lines.push("", overridden ? OVERRIDE_FOOTER : footer(checks));
+  lines.push(
+    "",
+    overridden
+      ? presentation.overrideFooter
+      : presentation.footers[worstStatus(checks)],
+  );
   return lines.join("\n");
 }
 
 /**
  * Plain-text report for terminal / CLI output.
  * @param {{checks: Check[]}} scorecard
+ * @param {{presentation?: Presentation}} [options]
  * @returns {string}
  */
-export function renderCli({ checks }) {
+export function renderCli(
+  { checks },
+  { presentation = ISSUE_PRESENTATION } = {},
+) {
   const lines = [
-    `Issue quality gate: ${CLI_STATUS_LABEL[worstStatus(checks)]}`,
+    `${presentation.cliLabel}: ${CLI_STATUS_LABEL[worstStatus(checks)]}`,
   ];
   for (const c of checks) {
     lines.push(`  ${ICON[c.status]} ${c.label}: ${strip(c.message)}`);

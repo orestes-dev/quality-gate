@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// CLI entry for `npx github:orestes-dev/issue-quality-gate <command>`.
+// CLI entry for `npx github:orestes-dev/quality-gate <command>`.
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -23,9 +23,7 @@ function cmdValidate(args) {
     (a, i) => !a.startsWith("--") && (titleFlag === -1 || i !== titleFlag + 1),
   );
   if (!file) {
-    console.error(
-      "usage: issue-quality-gate validate <file> [--title <title>]",
-    );
+    console.error("usage: quality-gate validate <file> [--title <title>]");
     process.exit(2);
   }
   const body = readFileSync(resolve(process.cwd(), file), "utf8");
@@ -49,7 +47,7 @@ async function main() {
       return sweep();
     default:
       console.error(
-        "usage: issue-quality-gate <init|validate|sweep>\n" +
+        "usage: quality-gate <init|validate|sweep>\n" +
           "  init [--force]   scaffold the Issue Form + workflow into this repo\n" +
           "                   (fails on drifted files; --force upgrades in place)\n" +
           "  validate <file> [--title <title>]  validate an issue body file (exit 1 on hard errors)\n" +
