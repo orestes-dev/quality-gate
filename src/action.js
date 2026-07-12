@@ -60,27 +60,18 @@ async function reconcileLabels(gh, issueNumber, currentLabels, desiredLabel) {
 }
 
 /**
- * Remove the gate's own comment if present.
- * @param {GitHub} gh
- * @param {number} issueNumber
- * @returns {Promise<void>}
- */
-async function deleteGateComment(gh, issueNumber) {
-  const existing = await gh.findComment(issueNumber, isGateComment);
-  if (existing) await gh.deleteComment(existing.id);
-}
-
-/**
- * Upsert the scorecard comment. Every outcome carries it, pass included: a green
- * checklist confirms the gate ran.
+ * Upsert the scorecard comment. Every outcome carries it, pass and override
+ * included: a green checklist confirms the gate ran, and an override still shows
+ * the scorecard with a banner acknowledging the bypass.
  * @param {GitHub} gh
  * @param {number} issueNumber
  * @param {Scorecard} result
+ * @param {{overridden?: boolean}} [options]
  * @returns {Promise<void>}
  */
-async function syncComment(gh, issueNumber, result) {
+async function syncComment(gh, issueNumber, result, options = {}) {
   const existing = await gh.findComment(issueNumber, isGateComment);
-  const bodyText = renderComment(result);
+  const bodyText = renderComment(result, options);
   if (!existing) {
     await gh.createComment(issueNumber, bodyText);
     return;
@@ -111,10 +102,14 @@ export async function run({ gh, event }) {
     typeof l === "string" ? l : l.name,
   );
 
-  // Manual override: label plus a written rationale bypasses the gate.
+  // Manual override: label plus a written rationale bypasses the gate. The
+  // quality label is stripped (no machine verdict under override), but the
+  // scorecard stays and leads with a banner acknowledging the bypass, so every
+  // run still leaves a comment behind.
   if (currentLabels.includes(OVERRIDE_LABEL) && hasOverrideRationale(body)) {
     await reconcileLabels(gh, issue.number, currentLabels, null);
-    await deleteGateComment(gh, issue.number);
+    const result = validate(body, issue.title);
+    await syncComment(gh, issue.number, result, { overridden: true });
     return `issue #${issue.number}: overridden`;
   }
 

@@ -30,6 +30,16 @@ const FOOTER_BY_STATUS = {
   [STATUS.PASS]: PASS_FOOTER,
 };
 
+// Shown instead of the status footer when the gate is overridden: the checks
+// below stay visible for the record, but they no longer gate.
+const OVERRIDE_BANNER =
+  `> ⏭️ **Gate overridden.** The \`${OVERRIDE_LABEL}\` label and an ` +
+  `\`## ${OVERRIDE_HEADING}\` section are both set, so no quality label is ` +
+  `applied. The checks below are advisory.`;
+const OVERRIDE_FOOTER =
+  `> Remove the \`${OVERRIDE_LABEL}\` label or the \`## ${OVERRIDE_HEADING}\` ` +
+  `section to re-apply the gate.`;
+
 // Terminal one-liner for the run's worst status.
 const CLI_STATUS_LABEL = {
   [STATUS.FAIL]: "FAILED",
@@ -45,16 +55,20 @@ const CLI_STATUS_LABEL = {
 const footer = (checks) => FOOTER_BY_STATUS[worstStatus(checks)];
 
 /**
- * Bot-comment markdown, with the hidden marker for in-place updates.
+ * Bot-comment markdown, with the hidden marker for in-place updates. On an
+ * override the scorecard still renders, leading with a banner that the gate is
+ * bypassed, so every run leaves a comment behind.
  * @param {{checks: Check[]}} scorecard
+ * @param {{overridden?: boolean}} [options]
  * @returns {string}
  */
-export function renderComment({ checks }) {
+export function renderComment({ checks }, { overridden = false } = {}) {
   const lines = [COMMENT_MARKER, "### Issue Quality Checklist", ""];
+  if (overridden) lines.push(OVERRIDE_BANNER, "");
   for (const c of checks) {
     lines.push(`- ${ICON[c.status]} **${c.label}**: ${c.message}`);
   }
-  lines.push("", footer(checks));
+  lines.push("", overridden ? OVERRIDE_FOOTER : footer(checks));
   return lines.join("\n");
 }
 

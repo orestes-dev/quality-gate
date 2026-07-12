@@ -138,10 +138,11 @@ test("a human comment carrying the marker is not deleted on a clean pass", async
   assert.ok(!gh.calls.some((c) => c[0] === "deleteComment"));
 });
 
-// Override: label + a written rationale strips every quality label and the
-// gate comment, regardless of whether the body would otherwise pass or fail.
+// Override: label + a written rationale strips every quality label but keeps the
+// scorecard, re-rendered with an override banner, regardless of whether the body
+// would otherwise pass or fail. Every run leaves a comment behind.
 
-test("override with rationale strips quality label and deletes the comment", async () => {
+test("override with rationale strips the quality label and keeps an annotated scorecard", async () => {
   const body = [
     failingBody,
     "",
@@ -168,11 +169,15 @@ test("override with rationale strips quality label and deletes the comment", asy
   assert.ok(
     gh.calls.some((c) => c[0] === "removeLabel" && c[2] === LABEL.FAILING),
   );
-  assert.ok(gh.calls.some((c) => c[0] === "deleteComment" && c[1] === 1));
+  assert.ok(!gh.calls.some((c) => c[0] === "deleteComment"));
   assert.ok(!gh.calls.some((c) => c[0] === "addLabels"));
+  const updated = gh.calls.find((c) => c[0] === "updateComment");
+  assert.ok(updated, "expected the scorecard to be updated, not removed");
+  assert.ok(updated[2].includes("Gate overridden"));
+  assert.ok(updated[2].includes("Issue Quality Checklist"));
 });
 
-test("override with rationale is a no-op once labels and comment are already cleared", async () => {
+test("override with rationale is a no-op once the label is cleared and the banner is in place", async () => {
   const body = [
     goodBody,
     "",
@@ -182,7 +187,13 @@ test("override with rationale is a no-op once labels and comment are already cle
   ].join("\n");
   const gh = fakeGh({
     issue: { number: 7, body, labels: [{ name: OVERRIDE_LABEL }] },
-    comments: [],
+    comments: [
+      {
+        id: 1,
+        user: { type: "Bot" },
+        body: renderComment(validate(body), { overridden: true }),
+      },
+    ],
   });
   await run({ gh, event });
   assert.deepEqual(gh.calls, []);
