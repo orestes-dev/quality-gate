@@ -7,6 +7,9 @@ on:
 permissions:
   pull-requests: write
   contents: read # actions/checkout via `uses: ./` needs it on private repos
+  # Required to read the labels of same-repo issues this PR closes
+  # (closingIssuesReferences) for the linked-issue readiness check.
+  issues: read
 concurrency:
   group: pr-quality-${{ github.event.pull_request.number }}
   cancel-in-progress: true

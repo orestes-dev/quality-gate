@@ -19,6 +19,11 @@ a closing keyword. Reusing `closingIssuesReferences` keeps one relationship.
 - **Cross-repo links are ignored** for readiness: the workflow token cannot
   reliably read another repo's labels. A PR whose only link is cross-repo fails
   unless overridden, and the scorecard says so rather than silently passing.
+- **The consuming workflow must grant `issues: read`.** Reading a linked issue's
+  labels goes through the issues API, so a workflow that omits the permission
+  reads an empty label set and hard-fails every PR that uses `Closes #N`. The
+  template and README call this out; a consumer copying an older permission block
+  inherits the failure.
 - **Staleness is accepted.** A PR's check depends on another object's mutable
   state, so it can go stale when the linked issue flips to ready after the PR was
   last evaluated. Rather than couple the two gates with cross-object

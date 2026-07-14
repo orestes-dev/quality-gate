@@ -288,7 +288,10 @@ no human is present to apply one. A human bypasses with `override:pr-quality`
 plus a `## Override rationale` section, mirroring the issue override. The
 consumer workflow lives in
 [`templates/workflow/pr-quality.yml`](templates/workflow/pr-quality.yml) and needs
-`permissions: pull-requests: write`.
+`permissions: pull-requests: write`, `contents: read`, and `issues: read`. The
+last is required so the linked-issue readiness check can read the labels of
+same-repo issues the PR closes (`closingIssuesReferences`). Without `issues:
+read` the gate hard-fails every PR that uses `Closes #N`.
 
 Before opening a PR, run the same structural checks on a draft body file with
 `validate-pr`, the PR-side mirror of `validate`:
