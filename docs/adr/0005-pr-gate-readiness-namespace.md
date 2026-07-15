@@ -15,7 +15,7 @@ workflow is `pr-readiness.yml`.
 ## Considered options
 
 Renaming the whole product (`quality-gate` the Action and repo) was rejected: the
-Action hosts both gates, and the issue gate genuinely checks issue *quality*
+Action hosts both gates, and the issue gate genuinely checks issue _quality_
 (structure, completeness). Only the PR gate's user-facing namespace moves.
 
 Renaming the Actions job (`quality-gate`), and therefore the emitted check
