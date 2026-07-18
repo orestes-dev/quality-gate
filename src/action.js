@@ -27,6 +27,15 @@ import { issueGate } from "./gates/issue.js";
  *   gate can exempt bot authors.
  * @property {import('./github.js').LinkedIssue[]} [linkedIssues] - Native linked
  *   issues (PRs only), for the transitive clearance check.
+ * @property {{sha: string, subject: string}[]} [commits] - The PR's commits
+ *   (commit gate only), for the Conventional Commits subject check.
+ * @property {{filename: string, patch: string}[]} [files] - The PR's changed
+ *   files (commit gate only), for the em-dash-in-diff check.
+ * @property {string} [headRef] - The PR head branch name (commit gate only).
+ * @property {string} [defaultBranch] - The base repo's default branch name
+ *   (commit gate only).
+ * @property {import('./config.js').Config} [config] - The parsed
+ *   `.quality-gate.json` opt-outs (commit gate only).
  */
 
 /**

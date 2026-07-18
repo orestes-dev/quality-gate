@@ -10,6 +10,8 @@ import {
   OVERRIDE_HEADING,
   PR_COMMENT_MARKER,
   PR_OVERRIDE_LABEL,
+  COMMIT_COMMENT_MARKER,
+  COMMIT_OVERRIDE_LABEL,
 } from "./constants.js";
 import { worstStatus } from "./validator.js";
 
@@ -81,6 +83,31 @@ export const PR_PRESENTATION = {
     `applied. The checks below are advisory.`,
   overrideFooter:
     `> Remove the \`${PR_OVERRIDE_LABEL}\` label or the \`## ${OVERRIDE_HEADING}\` ` +
+    `section to re-apply the gate.`,
+};
+
+// The commit gate's chrome. Like the PR gate it hard-fails CI, so its failing
+// footer points at the red check as the merge-blocking signal. Its own override
+// label keeps a commit-hygiene bypass from waiving PR readiness or issue quality.
+/** @type {Presentation} */
+export const COMMIT_PRESENTATION = {
+  marker: COMMIT_COMMENT_MARKER,
+  heading: "Commit Hygiene Checklist",
+  cliLabel: "Commit hygiene gate",
+  footers: {
+    [STATUS.FAIL]:
+      `> This check is failing, which blocks merge. Fix the failing checks, or ` +
+      `add the \`${COMMIT_OVERRIDE_LABEL}\` label with an \`## ${OVERRIDE_HEADING}\` ` +
+      `section in the PR description to bypass.`,
+    [STATUS.WARN]: "> All required checks pass. Warnings are informational.",
+    [STATUS.PASS]: "> All checks pass. This PR meets the commit-hygiene bar.",
+  },
+  overrideBanner:
+    `> ⏭️ **Gate overridden.** The \`${COMMIT_OVERRIDE_LABEL}\` label and an ` +
+    `\`## ${OVERRIDE_HEADING}\` section are both set, so no commit-hygiene label ` +
+    `is applied. The checks below are advisory.`,
+  overrideFooter:
+    `> Remove the \`${COMMIT_OVERRIDE_LABEL}\` label or the \`## ${OVERRIDE_HEADING}\` ` +
     `section to re-apply the gate.`,
 };
 

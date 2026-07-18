@@ -7,8 +7,9 @@ author: Orestes Carracedo
 inputs:
   object:
     description: >-
-      Which gate to run: `issue` (advisory) or `pr` (hard-fails CI). Selects the
-      command entry point behind the shared core.
+      Which gate to run: `issue` (advisory), `pr` (hard-fails CI), or `commit`
+      (hard-fails CI; commit-hygiene baseline). Selects the command entry point
+      behind the shared core.
     required: false
     default: issue
 runs:
@@ -40,11 +41,12 @@ runs:
       shell: bash
       working-directory: ${{ github.action_path }}
       run: yarn install --immutable
-    # One composite action, two entry points: the `object` input selects the
-    # command file (issue -> action.js, pr -> pr.js) behind the shared core.
+    # One composite action, three entry points: the `object` input selects the
+    # command file (issue -> action.js, pr -> pr.js, commit -> commit.js) behind
+    # the shared core.
     - name: Run quality gate
       shell: bash
       run: node "$GITHUB_ACTION_PATH/src/commands/${COMMAND}.js"
       env:
         GITHUB_TOKEN: ${{ github.token }}
-        COMMAND: ${{ inputs.object == 'pr' && 'pr' || 'action' }}
+        COMMAND: ${{ inputs.object == 'pr' && 'pr' || inputs.object == 'commit' && 'commit' || 'action' }}

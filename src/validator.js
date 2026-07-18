@@ -329,6 +329,18 @@ function checkField(sections, field, rule) {
 }
 
 /**
+ * Whether a subject line opens with a Conventional Commits `type(scope): summary`.
+ * The single Conventional Commits matcher, shared by the title check and the
+ * commit-hygiene gate's per-commit subject check, so both key off one regex.
+ * @param {string} subject - A commit subject or issue/PR title.
+ * @returns {boolean}
+ */
+export const isConventionalSubject = (subject) => {
+  const value = String(subject ?? "").trim();
+  return value !== "" && CONVENTIONAL_TITLE.test(value);
+};
+
+/**
  * Title: a Conventional Commits `type(scope): summary`, so it maps onto the
  * eventual branch/commit. Metadata, not a form field, so it's checked here and
  * prepended to the scorecard rather than derived from the form structure. Hard.
@@ -336,12 +348,10 @@ function checkField(sections, field, rule) {
  * @returns {Check}
  */
 export function checkTitle(title) {
-  const value = String(title ?? "").trim();
   // The message states the rule, identical on pass and fail; the icon is the
   // sole verdict, never the author's title verbatim.
   const core = "Conventional Commits: `type(scope): summary`";
-  const status =
-    value !== "" && CONVENTIONAL_TITLE.test(value) ? STATUS.PASS : STATUS.FAIL;
+  const status = isConventionalSubject(title) ? STATUS.PASS : STATUS.FAIL;
   return check("title", "Title", status, core);
 }
 

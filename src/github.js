@@ -145,19 +145,89 @@ export class GitHub {
   /**
    * Fetch a pull request fresh from the API (title/body/labels are mutable, so
    * the event payload can be stale). The `pulls` endpoint carries `user.login`;
-   * it is flattened to `author` so the gate's bot exemption can key off it.
-   * Label and comment writes still go through the shared issues endpoints, since
-   * every PR is also an issue with the same number.
+   * it is flattened to `author` so the gate's bot exemption can key off it. The
+   * head branch name (`headRef`) and the base repo's default branch
+   * (`defaultBranch`) ride along so the commit gate can flag a PR opened from the
+   * default branch without a second request. Label and comment writes still go
+   * through the shared issues endpoints, since every PR is also an issue with the
+   * same number.
    * @param {number} prNumber
-   * @returns {Promise<Issue & {author: string}>} The PR resource.
+   * @returns {Promise<Issue & {author: string, headRef: string, defaultBranch: string}>} The PR resource.
    */
   async getPullRequest(prNumber) {
     const res = await this.#request("GET", `${this.#base()}/pulls/${prNumber}`);
     if (!res.ok) throw new Error(`Failed to fetch pull request: ${res.status}`);
-    const pr = /** @type {Issue & {user?: {login?: string}}} */ (
-      await res.json()
+    const pr =
+      /** @type {Issue & {user?: {login?: string}, head?: {ref?: string}, base?: {repo?: {default_branch?: string}}}} */ (
+        await res.json()
+      );
+    return {
+      ...pr,
+      author: pr.user?.login ?? "",
+      headRef: pr.head?.ref ?? "",
+      defaultBranch: pr.base?.repo?.default_branch ?? "",
+    };
+  }
+
+  /**
+   * Paginate a repo-scoped list endpoint to exhaustion, collecting every item.
+   * Bounds each page at 100 (the REST maximum) and stops on the first short
+   * page. Used for a PR's commits and files, both of which can span pages.
+   * @param {string} path - Repo-relative path (after `#base()`), no query string.
+   * @param {string} what - Noun for the error message, e.g. "pull request commits".
+   * @returns {Promise<any[]>}
+   */
+  async #paginate(path, what) {
+    /** @type {any[]} */
+    const items = [];
+    let page = 1;
+    for (;;) {
+      const res = await this.#request(
+        "GET",
+        `${this.#base()}${path}?per_page=100&page=${page}`,
+      );
+      if (!res.ok) throw new Error(`Failed to fetch ${what}: ${res.status}`);
+      const batch = /** @type {any[]} */ (await res.json());
+      items.push(...batch);
+      if (batch.length < 100) return items;
+      page += 1;
+    }
+  }
+
+  /**
+   * The commits on a pull request, each flattened to `{ sha, subject }` (the
+   * subject is the first line of the commit message). The commit gate checks each
+   * subject against Conventional Commits.
+   * @param {number} prNumber
+   * @returns {Promise<{sha: string, subject: string}[]>}
+   */
+  async getPullRequestCommits(prNumber) {
+    const commits = await this.#paginate(
+      `/pulls/${prNumber}/commits`,
+      "pull request commits",
     );
-    return { ...pr, author: pr.user?.login ?? "" };
+    return commits.map((c) => ({
+      sha: c.sha,
+      subject: String(c.commit?.message ?? "").split("\n")[0],
+    }));
+  }
+
+  /**
+   * The files changed by a pull request, each flattened to `{ filename, patch }`.
+   * The `patch` is the unified diff hunk (absent for binary or truncated files).
+   * The commit gate scans added lines for em dashes.
+   * @param {number} prNumber
+   * @returns {Promise<{filename: string, patch: string}[]>}
+   */
+  async getPullRequestFiles(prNumber) {
+    const files = await this.#paginate(
+      `/pulls/${prNumber}/files`,
+      "pull request files",
+    );
+    return files.map((f) => ({
+      filename: f.filename,
+      patch: f.patch ?? "",
+    }));
   }
 
   /**

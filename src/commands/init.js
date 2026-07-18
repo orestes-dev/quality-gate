@@ -53,6 +53,13 @@ const TEMPLATES = [
     to: join(".github", "workflows", "pr-readiness.yml"),
   },
   {
+    // Commit hygiene gate: the CI mirror of the repo-contract baseline. No new
+    // Form or guide; it reads the PR's commits and diff, not a body the author
+    // fills in.
+    from: join(ROOT, "templates", "workflow", "commit-hygiene.yml"),
+    to: join(".github", "workflows", "commit-hygiene.yml"),
+  },
+  {
     // Repo-contract commit-msg hook (Conventional Commits subject, em-dash
     // policy). Vendored as a committed husky hook so it enforces where
     // `~/.dotfiles` is absent (CI, containers, fresh worktrees); jq/git/sh only,

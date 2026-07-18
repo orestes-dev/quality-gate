@@ -3,9 +3,10 @@
 A deterministic quality gate for GitHub issues and pull requests, so work lands
 well-scoped and actionable. Structural checks only: title format, presence,
 length, checklist count, size enum. The **issue gate** is advisory (labels +
-scorecard, never fails CI); the **PR gate** hard-fails CI so a red check blocks
-merge. Both are two callers of one shared core; see the [PR gate](#pull-request-gate)
-section and [`CONTEXT.md`](CONTEXT.md).
+scorecard, never fails CI); the **PR gate** and the **commit-hygiene gate** both
+hard-fail CI so a red check blocks merge. All three are callers of one shared
+core; see the [PR gate](#pull-request-gate), the
+[commit-hygiene gate](#commit-hygiene-gate), and [`CONTEXT.md`](CONTEXT.md).
 
 ## Features
 
@@ -117,7 +118,7 @@ pickup-readiness into a cleared label.
 npx github:orestes-dev/quality-gate init
 ```
 
-Run from the repo root. This drops six files, which together are the opt-in:
+Run from the repo root. This drops seven files, which together are the opt-in:
 
 - `.github/ISSUE_TEMPLATE/task.yml`: the Issue Form (GitHub-UI rendering of the
   `src/rules.js` structure, drift-checked against it).
@@ -131,8 +132,12 @@ Run from the repo root. This drops six files, which together are the opt-in:
   to the PR Form, the path an agent drafts a PR body against.
 - `.github/workflows/pr-readiness.yml`: a thin workflow calling the shared Action
   at `@main` for the PR gate (merge-blocking).
+- `.github/workflows/commit-hygiene.yml`: a thin workflow calling the shared
+  Action at `@main` for the [commit-hygiene gate](#commit-hygiene-gate)
+  (merge-blocking). No Form or Author guide: it reads the PR's commits and diff,
+  not a body the author fills in.
 
-Commit all six. `init` then prints a Suggested rule to stdout: an agent-guidance
+Commit all seven. `init` then prints a Suggested rule to stdout: an agent-guidance
 snippet pointing at the issue and PR Author guides and at the pre-flight step,
 for you to paste into your own agent-rules file (`AGENTS.md`, `CLAUDE.md`, editor
 rules). `init` writes it to no file, so it never clobbers a file it does not own.
@@ -318,6 +323,43 @@ It evaluates only what is knowable locally (section presence + title); it never
 attempts linked-issue readiness, which stays CI-authoritative (no PR exists yet
 to resolve `closingIssuesReferences`). Exits non-zero on hard errors.
 
+## Commit-hygiene gate
+
+A third entry point runs the same core over a pull request on `pull_request`
+events (including `synchronize`, so a push re-runs it). It is the CI mirror of the
+repo-contract baseline that local git hooks enforce, which `--no-verify` bypasses
+and which is absent entirely where a repo displaces `core.hooksPath`. The gate
+makes that baseline **un-silenceable rather than un-bypassable**: always
+overridable, never invisible (ADR 0002, orestes/dotfiles#52). It checks three
+rules across the PR:
+
+- **Commit subjects**: every commit's subject follows Conventional Commits
+  `type(scope): summary`. Merge, revert, fixup, and squash subjects are exempt,
+  matching the `commit-msg` hook. Opt out per repo with `skipConventionalCommits`.
+- **Em dashes**: no em dashes added on `*.md`/`*.mdx` lines in the diff, matching
+  the `pre-commit` hook. `maxAllowedEmDashes` sets a budget (default 0);
+  `allowEmDashes` skips the check entirely.
+- **Default branch**: the PR is not opened from the default branch. Opt out with
+  `allowDefaultBranchCommits`.
+
+Each rule reads its opt-out from the committed `.quality-gate.json` (see
+[Enforcement opt-outs](#enforcement-opt-outs)), not per-machine `git config`, so
+a relaxation is durable and reviewable; a relaxed check passes with a scorecard
+line quoting the recorded reason. Any un-relaxed violation **hard-fails CI**,
+turning the check red and blocking merge. Outcomes carry exactly one of
+`commit-hygiene:pass` / `commit-hygiene:warning` / `commit-hygiene:failing` plus
+an upserted **Commit Hygiene Checklist** scorecard, both diff-based like the other
+gates.
+
+The namespace (`commit-hygiene:*` / `override:commit-hygiene`) is deliberately
+distinct from `issue-quality` and `pr-readiness`, so one override never waives
+unrelated checks. Bot-authored PRs (actor login ends in `[bot]`) auto-pass with no
+override. A human bypasses the whole gate with `override:commit-hygiene` plus a
+`## Override rationale` section, mirroring the issue and PR overrides; neither the
+label nor the section alone suffices. The consumer workflow lives in
+[`templates/workflow/commit-hygiene.yml`](templates/workflow/commit-hygiene.yml)
+and needs `permissions: pull-requests: write` and `contents: read`.
+
 ## Enforcement opt-outs
 
 Some enforcement (the shipped commit hooks) can be relaxed per repo through a
@@ -364,8 +406,11 @@ Query one reason on the shell:
 jq -r '.overrides.maxAllowedEmDashes.reason' .quality-gate.json
 ```
 
-The [repo-contract git hooks](#repo-contract-git-hooks) consume these opt-outs;
-this section documents the file they read.
+Two consumers read these opt-outs: the [commit-hygiene gate](#commit-hygiene-gate)
+in CI and the [repo-contract git hooks](#repo-contract-git-hooks) locally, keyed off
+the same four (`skipConventionalCommits`, `maxAllowedEmDashes`, `allowEmDashes`,
+`allowDefaultBranchCommits`). Both read the same committed file, so a repo's
+baseline relaxations are identical on a developer's machine and in CI.
 
 ## Repo-contract git hooks
 
@@ -419,13 +464,14 @@ rendering of that structure.
 `templates/form/task.yml` (the Issue Form), `templates/markdown/issue.md` (the
 issue Author guide), `templates/markdown/pr.md` (the PR Form, written to both the
 GitHub template path and the root PR Author guide), and
-`templates/workflow/{issue,pr}-quality.yml` (the thin workflows), and
-`templates/husky/{commit-msg,pre-commit}` (the repo-contract git hooks). This
-repo's own `.github/`, root `.template.{issue,pr}.md`, and `.husky/{commit-msg,pre-commit}`
-are a dogfood instance of that bundle: the applied Forms, Author guides, and hooks
-are drift-tested byte-identical to the canonical ones, and each dogfood workflow is
-drift-tested to agree with its consumer template on every shared field (they differ
-only on `uses: ./` vs `@main`).
+the thin workflows `templates/workflow/issue-quality.yml`, `pr-readiness.yml`, and
+`commit-hygiene.yml`, and `templates/husky/{commit-msg,pre-commit}` (the
+repo-contract git hooks). This repo's own `.github/`, root
+`.template.{issue,pr}.md`, and `.husky/{commit-msg,pre-commit}` are a dogfood
+instance of that bundle: the applied Forms, Author guides, and hooks are
+drift-tested byte-identical to the canonical ones, and each dogfood workflow is
+drift-tested to agree with its consumer template on every shared field (they
+differ only on `uses: ./` vs `@main`).
 
 [`CONTEXT.md`](CONTEXT.md) is the domain glossary:
 Issue Form, structure, field, section, rule, check, scorecard, override.

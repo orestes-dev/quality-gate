@@ -1,0 +1,43 @@
+# Commit hygiene gate: thin consuming workflow.
+#
+# It calls the shared reusable Action with `object: commit`, pinned to @main so
+# rule/schema changes propagate on the next run with no per-repo bump. Like the
+# PR readiness gate this one hard-fails: a failing check blocks merge. It is the
+# CI mirror of the local repo-contract baseline (Conventional Commits subjects,
+# em-dash policy in the diff, no default-branch commits), so enforcement is
+# un-silenceable rather than un-bypassable (ADR 0002, orestes/dotfiles#52).
+name: Commit Hygiene Gate
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+permissions:
+  pull-requests: write
+  contents: read
+# Serialize per PR so rapid pushes do not race on labels or the comment; a newer
+# run cancels an in-flight older one.
+concurrency:
+  group: commit-hygiene-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    # Content edits (opened/edited/reopened) and new pushes (synchronize) always
+    # re-run the gate, since the commits and diff it reads change on a push. Label
+    # events re-run it only when a HUMAN touches a gate-relevant label: the
+    # override toggle, or a commit-hygiene:* label hand-edited (so a manual removal
+    # self-heals). The gate writes its own labels with GITHUB_TOKEN, and GitHub
+    # suppresses those events from triggering runs; the sender check is
+    # defense-in-depth for consumers who wire in a PAT or App token. run() is
+    # diff-based, so any redundant trigger is a no-op.
+    if: >-
+      github.event.action == 'opened' ||
+      github.event.action == 'edited' ||
+      github.event.action == 'reopened' ||
+      github.event.action == 'synchronize' ||
+      (github.event.sender.login != 'github-actions[bot]' &&
+       (github.event.label.name == 'override:commit-hygiene' ||
+        startsWith(github.event.label.name, 'commit-hygiene:')))
+    steps:
+      - uses: orestes-dev/quality-gate@main
+        with:
+          object: commit

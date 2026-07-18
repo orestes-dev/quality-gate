@@ -82,6 +82,58 @@ export const PR_OVERRIDE_LABEL = "override:pr-readiness";
 // scorecards without either gate adopting the other's comment.
 export const PR_COMMENT_MARKER = "<!-- pr-readiness-gate -->";
 
+// Commit-hygiene labels applied by the commit gate. Mutually exclusive,
+// mirroring LABEL/PR_LABEL. The commit axis is its OWN namespace, distinct from
+// issue-quality and pr-readiness, so one override never waives unrelated checks
+// (ADR 0002, orestes/dotfiles#52).
+export const COMMIT_LABEL = {
+  FAILING: "commit-hygiene:failing",
+  WARNING: "commit-hygiene:warning",
+  PASS: "commit-hygiene:pass",
+};
+
+// Colors/descriptions so the commit gate creates its labels intentionally.
+export const COMMIT_LABEL_META = {
+  [COMMIT_LABEL.FAILING]: {
+    color: "d93f0b",
+    description: "PR has failing commit-hygiene checks; merge is blocked",
+  },
+  [COMMIT_LABEL.WARNING]: {
+    color: "fbca04",
+    description: "PR passes but has non-blocking commit-hygiene warnings",
+  },
+  [COMMIT_LABEL.PASS]: {
+    color: "0e8a16",
+    description: "PR meets all commit-hygiene checks",
+  },
+};
+
+// Commit-gate manual escape hatch: this label plus a `## Override rationale`
+// section bypasses the commit gate for a human author (bots auto-pass without
+// one). Its own override label, so bypassing commit hygiene never waives PR
+// readiness or issue quality.
+export const COMMIT_OVERRIDE_LABEL = "override:commit-hygiene";
+
+// Distinct from COMMENT_MARKER and PR_COMMENT_MARKER so a PR can carry all three
+// scorecards without any gate adopting another's comment.
+export const COMMIT_COMMENT_MARKER = "<!-- commit-hygiene-gate -->";
+
+// Enforcement opt-out keys read from `.quality-gate.json` (src/config.js). They
+// mirror the `git config hooks.*` opt-outs of the local baseline hooks
+// (~/.dotfiles/git-hooks/), so the CI mirror relaxes on the same axes and the
+// bypass stays legible: a committed, reviewable data field with a required
+// reason (ADR 0002).
+export const OPT_OUT = {
+  // Allow the PR head branch to be the default branch.
+  DEFAULT_BRANCH: "allowDefaultBranchCommits",
+  // Skip the Conventional Commits subject check across the PR's commits.
+  CONVENTIONAL: "skipConventionalCommits",
+  // Skip the em-dash-in-diff check entirely.
+  EM_DASH: "allowEmDashes",
+  // Allow up to <value> em dashes added across *.md/*.mdx in the diff.
+  EM_DASH_BUDGET: "maxAllowedEmDashes",
+};
+
 // Scorecard line for an exempt object (a bot-authored PR): a single pass check,
 // so the gate still leaves a comment explaining why it did not enforce.
 export const EXEMPT_CHECK = {
