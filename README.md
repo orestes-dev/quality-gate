@@ -465,8 +465,10 @@ rendering of that structure.
 issue Author guide), `templates/markdown/pr.md` (the PR Form, written to both the
 GitHub template path and the root PR Author guide), and
 the thin workflows `templates/workflow/issue-quality.yml`, `pr-readiness.yml`, and
-`commit-hygiene.yml`, and `templates/husky/{commit-msg,pre-commit}` (the
-repo-contract git hooks). This repo's own `.github/`, root
+`commit-hygiene.yml` (each emitting its own gate namespace: `issue-quality:*`,
+`pr-readiness:*`, and `commit-hygiene:*`), and
+`templates/husky/{commit-msg,pre-commit}` (the repo-contract git hooks). This
+repo's own `.github/`, root
 `.template.{issue,pr}.md`, and `.husky/{commit-msg,pre-commit}` are a dogfood
 instance of that bundle: the applied Forms, Author guides, and hooks are
 drift-tested byte-identical to the canonical ones, and each dogfood workflow is
