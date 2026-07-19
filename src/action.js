@@ -7,9 +7,10 @@
 // the label triggers do not loop.
 
 import { hasOverrideRationale, worstStatus } from "./validator.js";
-import { renderComment } from "./report.js";
+import { renderComment, renderApiUnavailable } from "./report.js";
 import { STATUS, EXEMPT_CHECK } from "./constants.js";
 import { issueGate } from "./gates/issue.js";
+import { ApiUnavailableError } from "./github.js";
 
 /** @typedef {import('./validator.js').Scorecard} Scorecard */
 /** @typedef {import('./report.js').Presentation} Presentation */
@@ -157,6 +158,43 @@ async function syncComment(gh, gate, number, result, options = {}) {
 }
 
 /**
+ * Handle a GitHub-side outage the client could not retry past. Best-effort:
+ * upsert a distinct notice on the object (carrying the gate's marker, so a later
+ * healthy run replaces it) and fail the run without touching any quality label.
+ * The write may itself fail if the API is fully down; that is swallowed, since the
+ * red check and its summary already name the cause. Deliberately NOT a quality
+ * label: an outage must never read as a rule verdict on the object.
+ * @param {GitHub} gh
+ * @param {Gate} gate
+ * @param {number} number
+ * @param {ApiUnavailableError} err
+ * @returns {Promise<GateResult>}
+ */
+async function apiUnavailable(gh, gate, number, err) {
+  const bodyText = renderApiUnavailable(err, {
+    presentation: gate.presentation,
+  });
+  try {
+    const existing = await gh.findComment(
+      number,
+      isGateComment(gate.commentMarker),
+    );
+    if (!existing) {
+      await gh.createComment(number, bodyText);
+    } else if (existing.body.trim() !== bodyText.trim()) {
+      await gh.updateComment(existing.id, bodyText);
+    }
+  } catch {
+    // API still unreachable; the red verdict below stands on its own.
+  }
+  const status = err.status === null ? "network error" : err.status;
+  return {
+    summary: `${gate.name} #${number}: GitHub API unavailable (${status})`,
+    status: STATUS.FAIL,
+  };
+}
+
+/**
  * Core gate logic, decoupled from process env so tests can inject a client and
  * event. The `gate` descriptor selects the object; it defaults to the issue gate
  * so the issue callers (CI, sweep) stay unchanged.
@@ -172,8 +210,19 @@ export async function run({ gh, event, gate = issueGate }) {
     throw new Error(`Event payload has no ${gate.name}.`);
   }
 
-  // Fetch fresh: the event payload's body/labels can be stale.
-  const object = await gate.getObject(gh, number);
+  // Fetch fresh: the event payload's body/labels can be stale. A GitHub-side
+  // outage past the retry window is NOT a rule verdict: annotate the object with a
+  // distinct notice and fail (never apply a quality label), so the red check names
+  // the outage rather than masquerading as a governance failure (docs/adr/0010).
+  let object;
+  try {
+    object = await gate.getObject(gh, number);
+  } catch (err) {
+    if (err instanceof ApiUnavailableError) {
+      return apiUnavailable(gh, gate, number, err);
+    }
+    throw err;
+  }
   const body = object.body || "";
   const currentLabels = (object.labels || []).map((l) =>
     typeof l === "string" ? l : l.name,

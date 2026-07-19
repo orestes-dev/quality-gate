@@ -145,6 +145,35 @@ export function renderComment(
 }
 
 /**
+ * Bot-comment markdown for a GitHub-side outage: the gate could not read the
+ * object because the API kept faulting past the retry window. Carries the same
+ * marker as the scorecard so a later healthy run replaces it in place, but says
+ * plainly this is a GitHub fault, not a rule violation, so a red check is legible
+ * on the object without opening the job log (docs/adr/0010).
+ * @param {import('./github.js').ApiUnavailableError} err
+ * @param {{presentation?: Presentation}} [options]
+ * @returns {string}
+ */
+export function renderApiUnavailable(
+  err,
+  { presentation = ISSUE_PRESENTATION } = {},
+) {
+  const status = err.status === null ? "network error" : `HTTP ${err.status}`;
+  return [
+    presentation.marker,
+    `### ${presentation.heading}`,
+    "",
+    `- 🌐 **GitHub API unavailable (${status})**: the gate could not read this ` +
+      `object because the GitHub API kept failing after several retries. This is ` +
+      `a GitHub-side fault, **not** a rule violation and **not** a problem with ` +
+      `this object; no check was evaluated.`,
+    "",
+    "> Re-run the check once the GitHub API recovers. A green run replaces this " +
+      "notice; nothing here reflects on the object's contents.",
+  ].join("\n");
+}
+
+/**
  * Plain-text report for terminal / CLI output.
  * @param {{checks: Check[]}} scorecard
  * @param {{presentation?: Presentation}} [options]

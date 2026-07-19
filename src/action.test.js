@@ -8,7 +8,13 @@ import { parse } from "yaml";
 import { run } from "./action.js";
 import { validate } from "./validator.js";
 import { renderComment } from "./report.js";
-import { LABEL, OVERRIDE_LABEL, OVERRIDE_HEADING } from "./constants.js";
+import { ApiUnavailableError } from "./github.js";
+import {
+  LABEL,
+  OVERRIDE_LABEL,
+  OVERRIDE_HEADING,
+  STATUS,
+} from "./constants.js";
 import { goodBody } from "./fixtures.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -211,6 +217,70 @@ test("override label without a rationale warns and keeps the gate applied", asyn
   const created = gh.calls.find((c) => c[0] === "createComment");
   assert.ok(created, "expected a comment to be created");
   assert.ok(created[2].includes(OVERRIDE_HEADING));
+});
+
+// A GitHub outage past the retry window (ApiUnavailableError from the object
+// fetch) must NOT read as a rule verdict: the run fails, posts a distinct outage
+// notice on the object, and applies no quality label.
+
+test("an outage during the object fetch fails without applying a quality label", async () => {
+  const created = [];
+  const labelCalls = [];
+  const gh = {
+    async getIssue() {
+      throw new ApiUnavailableError(503);
+    },
+    async findComment() {
+      return null;
+    },
+    async createComment(number, body) {
+      created.push(body);
+    },
+    async addLabels(number, labels) {
+      labelCalls.push(labels);
+    },
+    async ensureLabel() {},
+    async removeLabel() {},
+    async updateComment() {},
+  };
+  const { summary, status } = await run({ gh, event });
+  assert.equal(status, STATUS.FAIL);
+  assert.match(summary, /GitHub API unavailable \(503\)/);
+  assert.equal(
+    labelCalls.length,
+    0,
+    "an outage must not apply a quality label",
+  );
+  assert.equal(
+    created.length,
+    1,
+    "the outage should be annotated on the object",
+  );
+  assert.match(created[0], /GitHub API unavailable/);
+  assert.match(created[0], /not.*a rule violation/i);
+});
+
+test("annotating the outage is best-effort: a failing write still yields a red verdict", async () => {
+  const gh = {
+    async getIssue() {
+      throw new ApiUnavailableError(null);
+    },
+    async findComment() {
+      throw new ApiUnavailableError(null);
+    },
+  };
+  const { summary, status } = await run({ gh, event });
+  assert.equal(status, STATUS.FAIL);
+  assert.match(summary, /GitHub API unavailable \(network error\)/);
+});
+
+test("a 4xx-style read error still throws (a missing object is a real failure)", async () => {
+  const gh = {
+    async getIssue() {
+      throw new Error("Failed to fetch issue: 404");
+    },
+  };
+  await assert.rejects(run({ gh, event }), /Failed to fetch issue: 404/);
 });
 
 // The workflow `if:` filter hardcodes JS-side strings in YAML (it cannot import

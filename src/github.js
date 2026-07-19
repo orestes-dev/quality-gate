@@ -1,13 +1,48 @@
 // Minimal GitHub REST client using global fetch. Zero dependencies so the
 // composite action can run without an `npm install` step on the runner.
 
-// Bound every request so a hung connection can't stall the action. No retry: the
-// next issue event re-runs the diff-based gate cleanly.
+// Bound every request so a hung connection can't stall the action.
 const REQUEST_TIMEOUT_MS = 10_000;
+
+// Bounded retry for GitHub-side faults (5xx) and network/timeout errors, applied
+// at the shared fetch choke point so every read and write path benefits. A 4xx is
+// never retried: it is an actionable statement about the object (404 missing, 403
+// forbidden), not about GitHub. When the window is exhausted the caller sees an
+// `ApiUnavailableError`, distinct from a rule verdict (see docs/adr/0010).
+const RETRY_ATTEMPTS = 3;
+const RETRY_BACKOFF_MS = 300;
 
 // GitHub's Search API caps total results at 1000 (10 pages of 100).
 const SEARCH_PER_PAGE = 100;
 const SEARCH_MAX_PAGES = 10;
+
+/** @param {number} ms @returns {Promise<void>} */
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * A GitHub-side fault the client could not get past within the retry window: a
+ * persistent 5xx or a network/timeout error. Distinct from a plain `Error` so a
+ * caller can tell "GitHub is down" apart from "this object failed a rule" and
+ * present it as such, rather than as a governance verdict.
+ */
+export class ApiUnavailableError extends Error {
+  /**
+   * @param {number|null} status - The last HTTP status seen, or null for a
+   *   network/timeout error with no response.
+   * @param {ErrorOptions} [options]
+   */
+  constructor(status, options) {
+    super(
+      status === null
+        ? "GitHub API unavailable (network error)"
+        : `GitHub API unavailable (${status})`,
+      options,
+    );
+    this.name = "ApiUnavailableError";
+    /** @type {number|null} The last HTTP status, or null for a network error. */
+    this.status = status;
+  }
+}
 
 /**
  * The subset of an issue resource the gate reads.
@@ -56,12 +91,57 @@ export class GitHub {
    * @param {string} [config.apiUrl] - API base URL; defaults to api.github.com.
    * @param {string} config.owner - Repository owner.
    * @param {string} config.repo - Repository name.
+   * @param {typeof fetch} [config.fetchImpl] - Fetch override, for tests.
+   * @param {number} [config.retryAttempts] - Total attempts on a 5xx/network
+   *   error, for tests; defaults to `RETRY_ATTEMPTS`.
+   * @param {number} [config.retryBackoffMs] - Base backoff between attempts, for
+   *   tests; defaults to `RETRY_BACKOFF_MS`.
    */
-  constructor({ token, apiUrl, owner, repo }) {
+  constructor({
+    token,
+    apiUrl,
+    owner,
+    repo,
+    fetchImpl,
+    retryAttempts,
+    retryBackoffMs,
+  }) {
     this.token = token;
     this.apiUrl = stripTrailingSlashes(apiUrl || "https://api.github.com");
     this.owner = owner;
     this.repo = repo;
+    this.fetch = fetchImpl || globalThis.fetch;
+    this.retryAttempts = retryAttempts ?? RETRY_ATTEMPTS;
+    this.retryBackoffMs = retryBackoffMs ?? RETRY_BACKOFF_MS;
+  }
+
+  /**
+   * The shared fetch choke point: bounds each attempt with a timeout, and retries
+   * a 5xx or a network/timeout error with exponential backoff up to
+   * `retryAttempts`. A 2xx/3xx/4xx response is returned as-is for the caller to
+   * interpret (a 4xx is a real, actionable failure of the object). When the window
+   * is exhausted on a GitHub-side fault it throws `ApiUnavailableError`.
+   * @param {string} url - Absolute request URL.
+   * @param {RequestInit} init - Fetch init, without `signal` (added per attempt).
+   * @returns {Promise<Response>}
+   */
+  async #fetchWithRetry(url, init) {
+    for (let attempt = 1; ; attempt += 1) {
+      const last = attempt >= this.retryAttempts;
+      try {
+        const res = await this.fetch(url, {
+          ...init,
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        });
+        if (res.status < 500) return res;
+        if (last) throw new ApiUnavailableError(res.status);
+      } catch (err) {
+        if (err instanceof ApiUnavailableError) throw err;
+        // Network error or timeout (AbortError): transient, treat like a 5xx.
+        if (last) throw new ApiUnavailableError(null, { cause: err });
+      }
+      await sleep(this.retryBackoffMs * 2 ** (attempt - 1));
+    }
   }
 
   /**
@@ -86,13 +166,11 @@ export class GitHub {
    * @returns {Promise<Response>}
    */
   async #request(method, path, body) {
-    const res = await fetch(`${this.apiUrl}${path}`, {
+    return this.#fetchWithRetry(`${this.apiUrl}${path}`, {
       method,
       headers: this.#headers(),
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-    return res;
   }
 
   /**
@@ -104,11 +182,10 @@ export class GitHub {
    * @returns {Promise<any>} The `data` object.
    */
   async #graphql(query, variables) {
-    const res = await fetch(`${this.apiUrl}/graphql`, {
+    const res = await this.#fetchWithRetry(`${this.apiUrl}/graphql`, {
       method: "POST",
       headers: this.#headers(),
       body: JSON.stringify({ query, variables }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`GraphQL request failed: ${res.status}`);
     const json = /** @type {{data?: any, errors?: unknown}} */ (
