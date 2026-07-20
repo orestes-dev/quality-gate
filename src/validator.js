@@ -52,6 +52,10 @@ const KNOWN_HEADINGS = new Set([
 // the section exists but records nothing recallable.
 const REJECTION_MIN_LENGTH = /** @type {number} */ (RULES.context.minLength);
 
+// The Rejection check's scorecard key. Not a field id (it has no `rules.js`
+// entry), so it is named here rather than derived from the descriptor.
+const REJECTION_KEY = "rejection";
+
 // A title must open with a Conventional Commits type, an optional `(scope)`, an
 // optional `!` breaking-change marker, then `: ` and a non-empty summary.
 const CONVENTIONAL_TITLE = new RegExp(
@@ -380,17 +384,17 @@ function checkRejection(sections) {
   const core = `\`${WONTFIX_LABEL}\` owes a reason: at least ${REJECTION_MIN_LENGTH} characters`;
   const value = (sections[REJECTION_HEADING] ?? "").trim();
   if (value === "") {
-    return check("rejection", REJECTION_HEADING, STATUS.FAIL, core);
+    return check(REJECTION_KEY, REJECTION_HEADING, STATUS.FAIL, core);
   }
   if (value.length < REJECTION_MIN_LENGTH) {
     return check(
-      "rejection",
+      REJECTION_KEY,
       REJECTION_HEADING,
       STATUS.WARN,
       `${core} — say why it was declined and what would reopen the question`,
     );
   }
-  return check("rejection", REJECTION_HEADING, STATUS.PASS, core);
+  return check(REJECTION_KEY, REJECTION_HEADING, STATUS.PASS, core);
 }
 
 /**
