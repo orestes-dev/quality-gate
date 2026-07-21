@@ -508,6 +508,20 @@ every consumer must obey, including CI and contributors with no `~/.dotfiles`
   `*.md`/`*.mdx` carry no em-dash beyond `maxAllowedEmDashes`. Opt-outs:
   `allowDefaultBranchCommits`, `maxAllowedEmDashes` (a budget).
 
+These hooks and the [commit-hygiene gate](#commit-hygiene-gate) enforce the same
+rules at two different points, and the difference is latency, not redundancy. The
+hook fires pre-commit, before the offending commit exists: recovery is free, you
+branch and re-commit. The gate, and the branch protection it backs, fires at push
+or merge, after the commit is already in local history: recovery means unwinding it
+off the default branch, and the cost compounds once you have stacked more commits
+on top. The remote is the authority (a local hook is bypassable with `--no-verify`
+and absent until `init` runs), so it is the layer you can never drop; the hook is a
+fast shadow of that authority, not a second one, moving the failure to the cheapest
+point to fix. The two are meant to agree. When the local hook permits what the
+remote denies (a stale `allowDefaultBranchCommits` left on a repo whose default
+branch is now protected) you get the worst case: no early warning and the full
+remote-recovery cost. Keep each opt-out in sync with the branch's actual protection.
+
 They are committed files, not a delegation to a global path, so they run where
 `~/.dotfiles` is absent: CI runners, containers, fresh worktrees. They depend only
 on `sh`, `git`, and `jq` (and `jq` only when a `.repo-contract.json` exists), never
