@@ -15,6 +15,7 @@ import {
   OVERRIDE_HEADING,
   STATUS,
   WONTFIX_LABEL,
+  GATE_CONTEXT,
 } from "./constants.js";
 import { goodBody } from "./fixtures.js";
 
@@ -338,7 +339,7 @@ test("the two workflows agree on their shared trigger, permissions, concurrency,
   // Concurrency and the job `if:` filter must be byte-identical.
   assert.deepEqual(consumer.concurrency, dogfood.concurrency);
   assert.equal(
-    consumer.jobs["repo-contract"].if,
-    dogfood.jobs["repo-contract"].if,
+    consumer.jobs[GATE_CONTEXT["issue-quality"]].if,
+    dogfood.jobs[GATE_CONTEXT["issue-quality"]].if,
   );
 });

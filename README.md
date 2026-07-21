@@ -13,15 +13,15 @@ core (`src/rules.js`).
 | What                                        | Kind               | Blocks merge? | Namespace                                           |
 | ------------------------------------------- | ------------------ | ------------- | --------------------------------------------------- |
 | [Issue quality gate](#issue-quality-gate)   | GitHub Action      | No (advisory) | `issue-quality:*`                                   |
-| [Pull request gate](#pull-request-gate)     | GitHub Action      | Yes           | `pr-readiness:*`                                    |
-| [Commit-hygiene gate](#commit-hygiene-gate) | GitHub Action      | Yes           | `commit-hygiene:*`                                  |
+| [Pull request gate](#pull-request-gate)     | GitHub Action      | Once required | `pr-readiness:*`                                    |
+| [Commit-hygiene gate](#commit-hygiene-gate) | GitHub Action      | Once required | `commit-hygiene:*`                                  |
 | [CLI](#the-cli)                             | `npx` command      | n/a           | `init` / `validate-issue` / `validate-pr` / `sweep` |
 | [Git hooks](#git-hooks)                     | Vendored git hooks | Local commit  | reads `.repo-contract.json`                         |
 
 - **Issue quality gate**: labels + a scorecard on every issue. Advisory: it never
   fails CI, it just marks the issue `issue-quality:{pass,warning,failing}`.
 - **Pull request gate**: checks a PR's title and required sections, and that every
-  issue it closes is gate-cleared. Hard-fails CI, so a red check blocks merge.
+  issue it closes is gate-cleared. Hard-fails CI.
 - **Commit-hygiene gate**: the CI mirror of the local git hooks (Conventional
   Commits, em-dash policy, no default-branch commits). Hard-fails CI.
 - **CLI**: `init` scaffolds the whole bundle into a repo; `validate-issue` /
@@ -30,6 +30,14 @@ core (`src/rules.js`).
 - **Git hooks**: committed hooks that enforce the same baseline as the
   commit-hygiene gate, locally, with `sh` + `git` + `jq` only. `init` activates
   them in the checkout it runs in; no husky and no install required.
+
+A red check only _blocks_ once its context is a required status check on the
+default branch. That is a repository setting no repo can commit, so `init` cannot
+ship it, and until someone sets it a failing gate reports and the PR merges
+anyway. `init` ends with a **Protection** line reporting which side of that line
+the repo is on; it reports and never configures protection, since requiring a
+currently-red check blocks every open PR at once (ADR
+[0014](docs/adr/0014-init-reports-gate-enforcement-never-mutates-it.md)).
 
 Common threads across all three gates:
 
@@ -314,6 +322,29 @@ One `npx github:orestes-dev/repo-contract <command>` binary, four commands. Run
 
 Scaffolds the bundle into a repo (see [Quick start](#quick-start)). `--force`
 upgrades drifted copies in place.
+
+`init` ends with a **Protection** line reporting whether the merge-blocking PR
+gate is actually enforced. Vendoring the workflow makes the check **run**; only a
+required-status-check rule on the default branch makes it **block**, and that rule
+lives in repository settings no repo can commit, so `init` cannot ship it and the
+enforcing half drifts unseen (ADR 0014). The line reads the `pr-readiness` context
+against both classic branch protection and rulesets, using the `gh` session `init`
+already opened:
+
+| Reported        | Meaning                                             |
+| --------------- | --------------------------------------------------- |
+| `required`      | the context is required; the gate really does block |
+| `not-required`  | the branch is protected, but not on this context    |
+| `unprotected`   | the branch has no protection or ruleset at all      |
+| `not-installed` | no `pr-readiness*.yml` vendored yet                 |
+| `unreadable`    | a 403 hid the answer; re-run with admin scope       |
+
+`unreadable` is reported as ok, not a warning: reading protection needs admin
+scope, and a permissions boundary is an unknown, never a verdict. The report never
+affects `init`'s exit code, and never configures protection: requiring a check
+that is currently red blocks every open PR at once, so it stays a deliberate human
+act. Do it once the gate is green on the PRs you care about, by adding
+`pr-readiness` to the default branch's required status checks.
 
 ### `validate-issue` and `validate-pr`
 

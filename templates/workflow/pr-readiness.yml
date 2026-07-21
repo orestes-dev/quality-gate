@@ -23,7 +23,11 @@ concurrency:
   group: pr-readiness-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 jobs:
-  repo-contract:
+  # The job key is the status-check context name branch protection matches on, so
+  # it names the gate rather than the tool. All three gates were once
+  # `repo-contract`, which left a required-status-check rule unable to tell them
+  # apart (ADR 0013).
+  pr-readiness:
     runs-on: ubuntu-latest
     # Content edits (opened/edited/reopened) always re-run the gate. Label events
     # re-run it only when a HUMAN touches a gate-relevant label: the override

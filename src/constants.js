@@ -177,6 +177,26 @@ export const OPT_OUT = {
   EM_DASH_BUDGET: "maxAllowedEmDashes",
 };
 
+// The workflow job key of each gate, which is also the status-check CONTEXT name
+// GitHub matches a required-status-check rule against. Named per gate rather than
+// per tool: all three were once `repo-contract`, which made them indistinguishable
+// to branch protection, so requiring one required all and requiring "the PR gate"
+// specifically was inexpressible (ADR 0013). Restated in the workflow YAML, which
+// cannot import this module; a drift test in `src/protection.test.js` guards the
+// coupling. Keyed by the workflow filename stem so `init`'s protection report can
+// map a vendored file to the context it is expected to publish.
+export const GATE_CONTEXT = {
+  "issue-quality": "issue-quality",
+  "pr-readiness": "pr-readiness",
+  "commit-hygiene": "commit-hygiene",
+};
+
+// The one gate whose check is merge-blocking by design, and therefore the one
+// `init`'s protection report expects to find in the default branch's required
+// contexts. The issue gate is advisory (it runs on issues, which have no merge to
+// block), and commit-hygiene is opt-in per repo.
+export const MERGE_BLOCKING_GATE = "pr-readiness";
+
 // Scorecard line for an exempt object (a bot-authored PR): a single pass check,
 // so the gate still leaves a comment explaining why it did not enforce.
 export const EXEMPT_CHECK = {

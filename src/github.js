@@ -524,4 +524,101 @@ export class GitHub {
       throw new Error(`Failed to delete comment: ${res.status}`);
     }
   }
+
+  /**
+   * The repository's default branch name.
+   * @returns {Promise<string>}
+   */
+  async getDefaultBranch() {
+    const res = await this.#request("GET", this.#base());
+    if (!res.ok) throw new Error(`Failed to fetch repository: ${res.status}`);
+    const repo = /** @type {{default_branch?: string}} */ (await res.json());
+    return repo.default_branch ?? "";
+  }
+
+  /**
+   * The status-check contexts required to merge into `branch`, read from BOTH
+   * mechanisms GitHub offers, since a repo may use either and the two compose:
+   * classic branch protection and repository rulesets. Read-only; nothing on this
+   * path writes (ADR 0014).
+   *
+   * Absence and unreadability are deliberately distinct. A 404 means the branch is
+   * genuinely unprotected, which is a finding worth reporting. A 403 means the
+   * token lacks the scope to see the answer, which must never be reported as "not
+   * required": a read failure is not evidence of a missing rule.
+   * @param {string} branch
+   * @returns {Promise<{contexts: string[], protected: boolean, readable: boolean}>}
+   *   When `readable` is false, permissions hid the answer and `contexts` is empty
+   *   and meaningless.
+   */
+  async getRequiredStatusChecks(branch) {
+    /** @type {Set<string>} */
+    const contexts = new Set();
+    let isProtected = false;
+    let readable = true;
+
+    const classic = await this.#request(
+      "GET",
+      `${this.#base()}/branches/${encodeURIComponent(branch)}/protection/required_status_checks`,
+    );
+    if (classic.status === 403) {
+      readable = false;
+    } else if (classic.ok) {
+      isProtected = true;
+      const body =
+        /** @type {{contexts?: string[], checks?: Array<{context?: string}>}} */ (
+          await classic.json()
+        );
+      // `contexts` is the legacy shape and `checks` the current one carrying an
+      // optional app id. GitHub returns both, so read whichever is populated.
+      for (const c of body.contexts ?? []) contexts.add(c);
+      for (const c of body.checks ?? []) if (c.context) contexts.add(c.context);
+    } else if (classic.status !== 404) {
+      throw new Error(`Failed to read branch protection: ${classic.status}`);
+    }
+
+    const fromRulesets = await this.#rulesetContexts(branch);
+    if (fromRulesets === null) {
+      readable = false;
+    } else if (fromRulesets.length > 0) {
+      isProtected = true;
+      for (const c of fromRulesets) contexts.add(c);
+    }
+
+    return { contexts: [...contexts], protected: isProtected, readable };
+  }
+
+  /**
+   * Status-check contexts required by the repository rulesets that apply to
+   * `branch`. Returns null when permissions hid the answer, which is distinct
+   * from an empty array (readable, and nothing required).
+   * @param {string} branch
+   * @returns {Promise<string[]|null>}
+   */
+  async #rulesetContexts(branch) {
+    const res = await this.#request(
+      "GET",
+      `${this.#base()}/rules/branches/${encodeURIComponent(branch)}`,
+    );
+    if (res.status === 403) return null;
+    // A 404 means no rules apply to the branch: an answer, not a failure.
+    if (res.status === 404) return [];
+    if (!res.ok) throw new Error(`Failed to read rulesets: ${res.status}`);
+
+    // This endpoint returns the rules already evaluated for the branch, so no
+    // per-ruleset fetch and no client-side ref-pattern matching is needed.
+    const rules =
+      /** @type {Array<{type?: string, parameters?: {required_status_checks?: Array<{context?: string}>}}>} */ (
+        await res.json()
+      );
+    /** @type {string[]} */
+    const contexts = [];
+    for (const rule of rules) {
+      if (rule.type !== "required_status_checks") continue;
+      for (const c of rule.parameters?.required_status_checks ?? []) {
+        if (c.context) contexts.push(c.context);
+      }
+    }
+    return contexts;
+  }
 }

@@ -14,7 +14,8 @@ concurrency:
   group: commit-hygiene-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 jobs:
-  repo-contract:
+  # Context name, not a tool name; see the template's note and ADR 0013.
+  commit-hygiene:
     runs-on: ubuntu-latest
     # See templates/workflow/commit-hygiene.yml: content events and pushes always
     # run; label events run only when a human touches the override or a

@@ -14,6 +14,7 @@ import {
   OVERRIDE_HEADING,
   STATUS,
   OPT_OUT,
+  GATE_CONTEXT,
 } from "./constants.js";
 import { commitGate } from "./gates/commit.js";
 
@@ -453,8 +454,8 @@ test("the two commit-hygiene workflows agree on trigger, permissions, concurrenc
   assert.equal(dogfood.permissions.contents, "read");
   assert.deepEqual(consumer.concurrency, dogfood.concurrency);
   assert.equal(
-    consumer.jobs["repo-contract"].if,
-    dogfood.jobs["repo-contract"].if,
+    consumer.jobs[GATE_CONTEXT["commit-hygiene"]].if,
+    dogfood.jobs[GATE_CONTEXT["commit-hygiene"]].if,
   );
 });
 

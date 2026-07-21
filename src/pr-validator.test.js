@@ -15,6 +15,7 @@ import {
   STATUS,
   LABEL,
   OVERRIDE_LABEL,
+  GATE_CONTEXT,
 } from "./constants.js";
 import { prGate } from "./gates/pr.js";
 
@@ -508,8 +509,8 @@ test("the two PR workflows agree on trigger, permissions, concurrency, and filte
 
   assert.deepEqual(consumer.concurrency, dogfood.concurrency);
   assert.equal(
-    consumer.jobs["repo-contract"].if,
-    dogfood.jobs["repo-contract"].if,
+    consumer.jobs[GATE_CONTEXT["pr-readiness"]].if,
+    dogfood.jobs[GATE_CONTEXT["pr-readiness"]].if,
   );
 });
 

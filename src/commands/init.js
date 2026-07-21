@@ -6,6 +6,7 @@
 
 import {
   readFileSync,
+  readdirSync,
   writeFileSync,
   mkdirSync,
   existsSync,
@@ -16,6 +17,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { GitHub } from "../github.js";
+import { checkProtection, isDrift } from "../protection.js";
 import {
   LABEL_META,
   PR_LABEL_META,
@@ -325,6 +327,60 @@ export async function ensureGateLabels({ client, log }) {
   }
 }
 
+// Basenames in the repo's `.github/workflows/`, or an empty list when the
+// directory is absent. Read after the file loop has written the vendored
+// workflows, so the merge-blocking gate's file is present if this run installed it.
+const WORKFLOW_DIR = join(".github", "workflows");
+
+/**
+ * List the workflow basenames `checkProtection` matches the PR gate against.
+ * @param {string} cwd
+ * @returns {string[]}
+ */
+function listWorkflowFiles(cwd) {
+  try {
+    return readdirSync(resolve(cwd, WORKFLOW_DIR));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Report, as one advisory line, whether the merge-blocking PR gate is actually a
+ * required status check on the default branch. This is the detection half of the
+ * enforcement split (ADR 0014): vendoring the workflow makes the check run, and
+ * only a required-status-check rule (a per-repo setting nothing here can commit)
+ * makes it block. `init` reports the gap and deliberately never repairs it, so a
+ * routine, half-attentive `init` across a fleet cannot require a currently-red
+ * check and wedge every open PR at once.
+ *
+ * Never changes `init`'s exit code: missing enforcement is a repository-settings
+ * fact, not an `init` failure, and the read may lack admin scope (reported
+ * honestly as unreadable). With no client, report skipped like the label step.
+ * @param {object} params
+ * @param {GitHub|null} params.client - The API client, or null to skip.
+ * @param {(line: string) => void} params.log
+ * @param {string} [params.cwd]
+ * @returns {Promise<void>}
+ */
+export async function reportProtection({ client, log, cwd = process.cwd() }) {
+  if (!client) {
+    log("skip     protection (no GitHub credentials or repo context)");
+    return;
+  }
+  const result = await checkProtection({
+    gh: client,
+    workflowFiles: listWorkflowFiles(cwd),
+  });
+  log(`${(isDrift(result) ? "warn" : "ok").padEnd(9)}${result.message}`);
+  if (isDrift(result)) {
+    log(
+      `         Requiring '${result.context}' on '${result.branch}' is a one-time admin act ` +
+        "init will not take for you: do it once the gate is green on the PRs you care about.",
+    );
+  }
+}
+
 /**
  * Copy the Issue Form, PR Form, their workflows, and the repo-contract git hooks
  * into the current working directory, then print the Suggested rule to stdout.
@@ -346,6 +402,12 @@ export async function ensureGateLabels({ client, log }) {
  * color/description drifted. This needs credentials and repo context, discovered
  * the way `sweep` does (`gh auth token`, `gh repo view`); with neither the label
  * step is reported as skipped and the file scaffolding still stands.
+ *
+ * Finally, report (never repair) whether the merge-blocking PR gate is actually a
+ * required status check on the default branch. Vendoring the workflow makes the
+ * check run; only a required-status-check rule (a per-repo setting nothing here
+ * can commit) makes it block, and that gap is otherwise silent (ADR 0014). The
+ * report is advisory and never affects the exit code.
  * @param {string[]} [argv] - Remaining CLI args; `--force` upgrades in place.
  * @returns {Promise<void>}
  */
@@ -398,11 +460,16 @@ export async function init(argv = []) {
   console.log("\nActivation:");
   const activation = ensureHooksPath({ log: (line) => console.log(line) });
 
+  const client = resolveLabelClient();
+
   console.log("\nLabels:");
   await ensureGateLabels({
-    client: resolveLabelClient(),
+    client,
     log: (line) => console.log(line),
   });
+
+  console.log("\nProtection:");
+  await reportProtection({ client, log: (line) => console.log(line) });
 
   // The hook paragraph reports what actually happened: claiming the hooks are
   // live where activation was skipped would restate the bug this step fixes.
@@ -420,7 +487,10 @@ export async function init(argv = []) {
       "fresh clone or worktree, or the hooks sit on disk unread. CI keeps the un-bypassable copy " +
       "of the same rules in the commit-hygiene gate.\n" +
       "The issue gate only labels issues going forward. To backfill labels + scorecards " +
-      "onto the existing open backlog, run: repo-contract sweep",
+      "onto the existing open backlog, run: repo-contract sweep\n" +
+      "The PR gate blocks merge only once its 'pr-readiness' context is a required status " +
+      "check on the default branch (see the Protection line above); vendoring the workflow " +
+      "makes it run, not block, and requiring the context stays a deliberate admin act.",
   );
 
   console.log(`\n${SUGGESTED_RULE}`);

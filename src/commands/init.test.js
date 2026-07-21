@@ -1,14 +1,34 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
 
-import { GATE_LABELS, ensureGateLabels } from "./init.js";
+import { GATE_LABELS, ensureGateLabels, reportProtection } from "./init.js";
 import {
   OVERRIDE_LABEL,
   PR_OVERRIDE_LABEL,
   COMMIT_OVERRIDE_LABEL,
   WONTFIX_LABEL,
   WONTFIX_LABEL_META,
+  GATE_CONTEXT,
+  MERGE_BLOCKING_GATE,
 } from "../constants.js";
+
+// The repo root, where `.github/workflows/pr-readiness.yml` actually lives, so
+// `reportProtection` sees the merge-blocking workflow as vendored and proceeds to
+// the (stubbed) protection read instead of short-circuiting to not-installed.
+const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
+
+// A GitHub stub exposing only what checkProtection reads: the default branch and
+// its required status checks. No network, no ensureLabel.
+const stubGh = (checks) => ({
+  getDefaultBranch: async () => "main",
+  getRequiredStatusChecks: async () => ({
+    contexts: [],
+    protected: false,
+    readable: true,
+    ...checks,
+  }),
+});
 
 // The fixed schema is the three gate triples, the three override labels, and
 // `wontfix`.
@@ -97,4 +117,43 @@ test("ensureGateLabels skips (no write) when there are no credentials", async ()
   await ensureGateLabels({ client: null, log: (l) => lines.push(l) });
   assert.equal(lines.length, 1);
   assert.match(lines[0], /^skip\s+labels \(no GitHub credentials/);
+});
+
+test("reportProtection skips (no read) when there are no credentials", async () => {
+  const lines = [];
+  await reportProtection({ client: null, log: (l) => lines.push(l) });
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /^skip\s+protection \(no GitHub credentials/);
+});
+
+test("reportProtection warns and prints the remediation on drift", async () => {
+  const lines = [];
+  await reportProtection({
+    client: stubGh({ contexts: ["build"], protected: true }),
+    log: (l) => lines.push(l),
+    cwd: REPO_ROOT,
+  });
+  assert.ok(lines[0].startsWith("warn"), `first line was: ${lines[0]}`);
+  // The advisory second line names the context and stays read-only in tone.
+  assert.ok(
+    lines.some(
+      (l) =>
+        l.includes(`Requiring '${GATE_CONTEXT[MERGE_BLOCKING_GATE]}'`) &&
+        l.includes("will not take for you"),
+    ),
+  );
+});
+
+test("reportProtection reports ok with no remediation when the gate is required", async () => {
+  const lines = [];
+  await reportProtection({
+    client: stubGh({
+      contexts: [GATE_CONTEXT[MERGE_BLOCKING_GATE]],
+      protected: true,
+    }),
+    log: (l) => lines.push(l),
+    cwd: REPO_ROOT,
+  });
+  assert.equal(lines.length, 1);
+  assert.ok(lines[0].startsWith("ok"), `line was: ${lines[0]}`);
 });
