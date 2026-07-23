@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
@@ -15,7 +15,6 @@ import {
   OVERRIDE_HEADING,
   STATUS,
   WONTFIX_LABEL,
-  GATE_CONTEXT,
 } from "./constants.js";
 import { goodBody } from "./fixtures.js";
 
@@ -292,54 +291,69 @@ test("a 4xx-style read error still throws (a missing object is a real failure)",
 const QUALITY_PREFIX = LABEL.FAILING.slice(0, LABEL.FAILING.indexOf(":") + 1);
 const GATE_SENDER = "github-actions[bot]";
 
-test("both workflows couple the trigger filter to the schema strings", () => {
-  for (const rel of [
-    "templates/workflow/issue-quality.yml",
-    ".github/workflows/issue-quality.yml",
-  ]) {
-    const yaml = read(rel);
-    assert.ok(
-      yaml.includes(`github.event.label.name == '${OVERRIDE_LABEL}'`),
-      `${rel} is missing the override-label trigger guard`,
-    );
-    assert.ok(
-      yaml.includes(`startsWith(github.event.label.name, '${QUALITY_PREFIX}')`),
-      `${rel} is missing the quality-label self-heal guard`,
-    );
-    assert.ok(
-      yaml.includes(`github.event.sender.login != '${GATE_SENDER}'`),
-      `${rel} is missing the human-sender guard`,
-    );
-    assert.ok(
-      yaml.includes(`github.event.label.name == '${WONTFIX_LABEL}'`),
-      `${rel} is missing the wontfix (Rejection) trigger guard`,
-    );
-  }
+// The template only: the installed copy under `.github/workflows/` is asserted
+// byte-identical to it in `scaffolds.test.js`, so checking both paths here would
+// restate a claim byte-equality already subsumes (ADR 0018).
+test("the issue workflow couples the trigger filter to the schema strings", () => {
+  const rel = "templates/workflow/issue-quality.yml";
+  const yaml = read(rel);
+  assert.ok(
+    yaml.includes(`github.event.label.name == '${OVERRIDE_LABEL}'`),
+    `${rel} is missing the override-label trigger guard`,
+  );
+  assert.ok(
+    yaml.includes(`startsWith(github.event.label.name, '${QUALITY_PREFIX}')`),
+    `${rel} is missing the quality-label self-heal guard`,
+  );
+  assert.ok(
+    yaml.includes(`github.event.sender.login != '${GATE_SENDER}'`),
+    `${rel} is missing the human-sender guard`,
+  );
+  assert.ok(
+    yaml.includes(`github.event.label.name == '${WONTFIX_LABEL}'`),
+    `${rel} is missing the wontfix (Rejection) trigger guard`,
+  );
 });
 
-// The consumer template (`@main`) and the dogfood workflow (`./`) are accepted
-// duplication: they legitimately differ on the `uses:` line, comments, and the
-// dogfood's extra `contents: read` + checkout step. This drift test guards the
-// parts that MUST stay in lock-step so the repo gates itself exactly as it tells
-// consumers to.
-test("the two workflows agree on their shared trigger, permissions, concurrency, and filter", () => {
-  const consumer = parse(read("templates/workflow/issue-quality.yml"));
-  const dogfood = parse(read(".github/workflows/issue-quality.yml"));
+// --- drift: action.yml's `object` input dispatches to command files that exist ---
 
-  // Issue trigger types. (`on` stays a string key under YAML 1.2, not a bool.)
-  assert.deepEqual(consumer.on.issues.types, dogfood.on.issues.types);
+// The narrower mitigation ADR 0018 accepted in place of the dropped `uses: ./`
+// self-test. Nothing else executes `action.yml`, so its one piece of routing
+// logic, the `object` input to command-file mapping, is asserted here: each
+// value the composite dispatches on must resolve to a file `src/commands/`
+// actually ships, and the run step must invoke that path.
+const OBJECT_COMMANDS = {
+  issue: "action",
+  pr: "pr",
+  commit: "commit",
+};
 
-  // Permissions: both write issues; the dogfood additionally reads contents for
-  // `actions/checkout` (the known, tolerated difference).
-  assert.equal(consumer.permissions.issues, "write");
-  assert.equal(dogfood.permissions.issues, "write");
-  assert.equal(dogfood.permissions.contents, "read");
-  assert.equal(consumer.permissions.contents, undefined);
+test("every action.yml `object` value dispatches to an existing command file", () => {
+  const action = parse(read("action.yml"));
+  const step = action.runs.steps.find((s) => s.name === "Run gate");
 
-  // Concurrency and the job `if:` filter must be byte-identical.
-  assert.deepEqual(consumer.concurrency, dogfood.concurrency);
+  // The gate runs whatever COMMAND resolves to, so the coupling is only real if
+  // the command name is what the run line interpolates.
   assert.equal(
-    consumer.jobs[GATE_CONTEXT["issue-quality"]].if,
-    dogfood.jobs[GATE_CONTEXT["issue-quality"]].if,
+    step.run.trim(),
+    'node "$GITHUB_ACTION_PATH/src/commands/${COMMAND}.js"',
   );
+
+  const expression = step.env.COMMAND;
+  for (const [object, command] of Object.entries(OBJECT_COMMANDS)) {
+    assert.ok(
+      existsSync(join(ROOT, "src", "commands", `${command}.js`)),
+      `object: ${object} dispatches to src/commands/${command}.js, which does not exist`,
+    );
+    // `issue` is the fallthrough: it is named by the input default, not by a
+    // comparison in the expression.
+    const dispatch =
+      object === action.inputs.object.default
+        ? `|| '${command}'`
+        : `inputs.object == '${object}' && '${command}'`;
+    assert.ok(
+      expression.includes(dispatch),
+      `action.yml no longer dispatches object: ${object} to ${command}.js`,
+    );
+  }
 });

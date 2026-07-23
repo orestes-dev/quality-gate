@@ -1,3 +1,7 @@
 {
-  "scaffolds": ["quality-gates", "commit-hygiene", "git-hooks"]
+  "scaffolds": [
+    "quality-gates",
+    "commit-hygiene",
+    "git-hooks"
+  ]
 }

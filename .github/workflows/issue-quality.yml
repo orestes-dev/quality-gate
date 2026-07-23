@@ -1,26 +1,40 @@
-# Dogfood: run this repo's own gate against its own issues, using the local
-# action (`uses: ./`) rather than the published @main reference.
+# Issue quality gate: thin consuming workflow.
+#
+# This file is the opt-in: its presence turns CI enforcement on for this repo
+# and signals contributors to pre-flight-validate before `gh issue create`.
+# It calls the shared reusable Action, pinned to @main so rule/schema changes
+# propagate on the next run with no per-repo bump.
 name: Issue Quality Gate
 on:
   issues:
     types: [opened, edited, labeled, unlabeled]
 permissions:
   issues: write
-  contents: read # actions/checkout via `uses: ./` needs it on private repos
-# Serialize per issue but queue-and-drain rather than cancel: a skipping
-# incidental-label run must never cancel an in-flight validating run (see
-# templates/workflow/issue-quality.yml for the full rationale).
+# Serialize per issue so rapid edits do not race on labels or the comment. Runs
+# queue and drain in order rather than cancelling: an incidental (non-gate) label
+# event, whose job `if:` is false and which therefore skips, must never cancel an
+# in-flight run that would write a verdict. run() is idempotent (it updates the
+# single checklist comment and re-sets the label), so serial redundant runs
+# converge on the last-writer state without double-posting or corruption.
 concurrency:
   group: issue-quality-${{ github.event.issue.number }}
   cancel-in-progress: false
 jobs:
-  # Context name, not a tool name; see the template's note and ADR 0013.
+  # The job key is the status-check context name branch protection matches on, so
+  # it names the gate rather than the tool. All three gates were once
+  # `repo-contract`, which left a required-status-check rule unable to tell them
+  # apart (ADR 0013).
   issue-quality:
     runs-on: ubuntu-latest
-    # See templates/workflow.yml: content events always run; label events run
-    # only when a human touches the override, an issue-quality:* label, or
-    # `wontfix`, so the gate never re-triggers itself but manual quality-label
-    # edits self-heal and a Rejection is graded the moment it is declared.
+    # Content edits (opened/edited) always re-run the gate. Label events re-run
+    # it only when a HUMAN touches a gate-relevant label: the override toggle, an
+    # issue-quality:* label hand-edited (so a manual removal self-heals), or
+    # `wontfix`, which turns the issue into a Rejection and adds the rationale
+    # check. The gate writes its own labels with GITHUB_TOKEN, and GitHub
+    # suppresses those events from triggering runs; the sender check is
+    # defense-in-depth for consumers who wire in a PAT or App token, where that
+    # suppression does not apply. run() is diff-based, so any redundant trigger
+    # is a no-op.
     if: >-
       github.event.action == 'opened' ||
       github.event.action == 'edited' ||
@@ -29,5 +43,4 @@ jobs:
         github.event.label.name == 'wontfix' ||
         startsWith(github.event.label.name, 'issue-quality:')))
     steps:
-      - uses: actions/checkout@v5
-      - uses: ./
+      - uses: orestes-dev/repo-contract@main

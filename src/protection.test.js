@@ -38,15 +38,13 @@ const stubGh = ({ branch = "main", checks = {} }) => ({
 // look for a context nothing publishes, and report false drift in every repo.
 test("each gate workflow's job key matches its GATE_CONTEXT constant", () => {
   for (const [stem, context] of Object.entries(GATE_CONTEXT)) {
-    for (const dir of ["templates/workflow", ".github/workflows"]) {
-      const doc = parse(read(`${dir}/${stem}.yml`));
-      const jobKeys = Object.keys(doc.jobs);
-      assert.deepEqual(
-        jobKeys,
-        [context],
-        `${dir}/${stem}.yml must declare exactly one job named '${context}'`,
-      );
-    }
+    const rel = `templates/workflow/${stem}.yml`;
+    const doc = parse(read(rel));
+    assert.deepEqual(
+      Object.keys(doc.jobs),
+      [context],
+      `${rel} must declare exactly one job named '${context}'`,
+    );
   }
 });
 

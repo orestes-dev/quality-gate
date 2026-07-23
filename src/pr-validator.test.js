@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parse } from "yaml";
 
 import { run } from "./action.js";
 import { validatePr, PR_SECTIONS, DIVERGENCE_FLAG } from "./pr-validator.js";
@@ -15,7 +14,6 @@ import {
   STATUS,
   LABEL,
   OVERRIDE_LABEL,
-  GATE_CONTEXT,
 } from "./constants.js";
 import { prGate } from "./gates/pr.js";
 
@@ -434,23 +432,12 @@ test("the canonical PR Form headings and required flags match PR_SECTIONS", () =
   }
 });
 
-// --- drift: the dogfood PR Form copies are byte-identical to the bundle ---
+// --- drift: the two PR Form destinations are the same bytes as each other ---
 
-// `init` writes the canonical PR Form to two consumer paths verbatim: the
-// GitHub-rendered `.github/PULL_REQUEST_TEMPLATE.md` and the agent-facing root
-// `.template.pr.md`. This repo's own two copies are its dogfood instance, so each
-// must stay byte-identical to the bundle or dogfooding drifts from consumers get.
-test("the dogfood .github PR Form is byte-identical to the templates bundle", () => {
-  assert.equal(
-    read(".github/PULL_REQUEST_TEMPLATE.md"),
-    read("templates/markdown/pr.md"),
-  );
-});
-
-test("the dogfood root PR Author guide is byte-identical to the templates bundle", () => {
-  assert.equal(read(".template.pr.md"), read("templates/markdown/pr.md"));
-});
-
+// Each destination's equality with `templates/markdown/pr.md` is asserted by the
+// table-driven walk over `SCAFFOLDS[].files` in `scaffolds.test.js`. This one is
+// transitively implied by that pair, and kept anyway because it is the statement
+// of *why* it matters:
 // The PR body GitHub posts and the guide the agent drafts against are the same
 // bytes, so authoring guidance can only live in HTML comments (ADR 0003).
 test("the GitHub PR Form and the root PR Author guide are byte-identical", () => {
@@ -468,49 +455,24 @@ const PR_READINESS_PREFIX = PR_LABEL.FAILING.slice(
 );
 const GATE_SENDER = "github-actions[bot]";
 
-test("both PR workflows couple the trigger filter to the schema strings", () => {
-  for (const rel of [
-    "templates/workflow/pr-readiness.yml",
-    ".github/workflows/pr-readiness.yml",
-  ]) {
-    const yaml = read(rel);
-    assert.ok(
-      yaml.includes(`github.event.label.name == '${PR_OVERRIDE_LABEL}'`),
-      `${rel} is missing the override-label trigger guard`,
-    );
-    assert.ok(
-      yaml.includes(
-        `startsWith(github.event.label.name, '${PR_READINESS_PREFIX}')`,
-      ),
-      `${rel} is missing the readiness-label self-heal guard`,
-    );
-    assert.ok(
-      yaml.includes(`github.event.sender.login != '${GATE_SENDER}'`),
-      `${rel} is missing the human-sender guard`,
-    );
-  }
-});
-
-test("the two PR workflows agree on trigger, permissions, concurrency, and filter", () => {
-  const consumer = parse(read("templates/workflow/pr-readiness.yml"));
-  const dogfood = parse(read(".github/workflows/pr-readiness.yml"));
-
-  assert.deepEqual(
-    consumer.on.pull_request.types,
-    dogfood.on.pull_request.types,
+// The template only: the installed copy under `.github/workflows/` is asserted
+// byte-identical to it in `scaffolds.test.js` (ADR 0018).
+test("the PR workflow couples the trigger filter to the schema strings", () => {
+  const rel = "templates/workflow/pr-readiness.yml";
+  const yaml = read(rel);
+  assert.ok(
+    yaml.includes(`github.event.label.name == '${PR_OVERRIDE_LABEL}'`),
+    `${rel} is missing the override-label trigger guard`,
   );
-
-  // Both write PRs and read contents; the reusable action's checkout and the
-  // dogfood's `uses: ./` both need contents: read.
-  assert.equal(consumer.permissions["pull-requests"], "write");
-  assert.equal(dogfood.permissions["pull-requests"], "write");
-  assert.equal(consumer.permissions.contents, "read");
-  assert.equal(dogfood.permissions.contents, "read");
-
-  assert.deepEqual(consumer.concurrency, dogfood.concurrency);
-  assert.equal(
-    consumer.jobs[GATE_CONTEXT["pr-readiness"]].if,
-    dogfood.jobs[GATE_CONTEXT["pr-readiness"]].if,
+  assert.ok(
+    yaml.includes(
+      `startsWith(github.event.label.name, '${PR_READINESS_PREFIX}')`,
+    ),
+    `${rel} is missing the readiness-label self-heal guard`,
+  );
+  assert.ok(
+    yaml.includes(`github.event.sender.login != '${GATE_SENDER}'`),
+    `${rel} is missing the human-sender guard`,
   );
 });
 

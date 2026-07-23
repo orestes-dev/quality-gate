@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parse } from "yaml";
 
 import { run } from "./action.js";
 import { validateCommits } from "./commit-validator.js";
@@ -14,7 +13,6 @@ import {
   OVERRIDE_HEADING,
   STATUS,
   OPT_OUT,
-  GATE_CONTEXT,
 } from "./constants.js";
 import { commitGate } from "./gates/commit.js";
 
@@ -407,7 +405,7 @@ test("a bot-authored PR auto-passes without an override, even with bad commits",
   assert.ok(created[2].includes("gate exempt"));
 });
 
-// --- drift: the commit-hygiene workflows stay coupled to the schema strings ---
+// --- drift: the commit-hygiene workflow stays coupled to the schema strings ---
 
 const COMMIT_PREFIX = COMMIT_LABEL.FAILING.slice(
   0,
@@ -415,47 +413,26 @@ const COMMIT_PREFIX = COMMIT_LABEL.FAILING.slice(
 );
 const GATE_SENDER = "github-actions[bot]";
 
-test("both commit-hygiene workflows couple the trigger filter to the schema strings", () => {
-  for (const rel of [
-    "templates/workflow/commit-hygiene.yml",
-    ".github/workflows/commit-hygiene.yml",
-  ]) {
-    const yaml = read(rel);
-    assert.ok(
-      yaml.includes(`github.event.label.name == '${COMMIT_OVERRIDE_LABEL}'`),
-      `${rel} is missing the override-label trigger guard`,
-    );
-    assert.ok(
-      yaml.includes(`startsWith(github.event.label.name, '${COMMIT_PREFIX}')`),
-      `${rel} is missing the commit-hygiene-label self-heal guard`,
-    );
-    assert.ok(
-      yaml.includes(`github.event.sender.login != '${GATE_SENDER}'`),
-      `${rel} is missing the human-sender guard`,
-    );
-    assert.ok(
-      yaml.includes("synchronize"),
-      `${rel} must re-run on new pushes (synchronize)`,
-    );
-  }
-});
-
-test("the two commit-hygiene workflows agree on trigger, permissions, concurrency, and filter", () => {
-  const consumer = parse(read("templates/workflow/commit-hygiene.yml"));
-  const dogfood = parse(read(".github/workflows/commit-hygiene.yml"));
-
-  assert.deepEqual(
-    consumer.on.pull_request.types,
-    dogfood.on.pull_request.types,
+// The template only: the installed copy under `.github/workflows/` is asserted
+// byte-identical to it in `scaffolds.test.js` (ADR 0018).
+test("the commit-hygiene workflow couples the trigger filter to the schema strings", () => {
+  const rel = "templates/workflow/commit-hygiene.yml";
+  const yaml = read(rel);
+  assert.ok(
+    yaml.includes(`github.event.label.name == '${COMMIT_OVERRIDE_LABEL}'`),
+    `${rel} is missing the override-label trigger guard`,
   );
-  assert.equal(consumer.permissions["pull-requests"], "write");
-  assert.equal(dogfood.permissions["pull-requests"], "write");
-  assert.equal(consumer.permissions.contents, "read");
-  assert.equal(dogfood.permissions.contents, "read");
-  assert.deepEqual(consumer.concurrency, dogfood.concurrency);
-  assert.equal(
-    consumer.jobs[GATE_CONTEXT["commit-hygiene"]].if,
-    dogfood.jobs[GATE_CONTEXT["commit-hygiene"]].if,
+  assert.ok(
+    yaml.includes(`startsWith(github.event.label.name, '${COMMIT_PREFIX}')`),
+    `${rel} is missing the commit-hygiene-label self-heal guard`,
+  );
+  assert.ok(
+    yaml.includes(`github.event.sender.login != '${GATE_SENDER}'`),
+    `${rel} is missing the human-sender guard`,
+  );
+  assert.ok(
+    yaml.includes("synchronize"),
+    `${rel} must re-run on new pushes (synchronize)`,
   );
 });
 

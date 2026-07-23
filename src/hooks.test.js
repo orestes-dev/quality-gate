@@ -91,21 +91,6 @@ function initInto(dir, ...args) {
   });
 }
 
-// --- drift: the dogfood .repo-contract/hooks are byte-identical to the bundle ---
-
-// `init` writes each canonical hook to `.repo-contract/hooks/<name>` verbatim;
-// this repo's own copies are its dogfood instance, so each must stay
-// byte-identical to the bundle
-// or the hooks a consumer gets drift from the ones this repo runs (ADR 0002/0003).
-for (const name of HOOK_NAMES) {
-  test(`the dogfood .repo-contract/hooks/${name} is byte-identical to the templates bundle`, () => {
-    assert.equal(
-      read(join(".repo-contract", "hooks", name)),
-      read(join("templates", "git-hooks", name)),
-    );
-  });
-}
-
 // --- init: drops the hooks, and --force repairs a tampered vendored hook ---
 
 test("init drops both repo-contract hooks into a fresh repo", () => {

@@ -172,11 +172,10 @@ and constraints together, and the validator reads it directly. Nothing reads the
 [Issue Form](.github/ISSUE_TEMPLATE/task.yml) at runtime; it and the Author guide
 are drift-checked renderings of that source (see
 [ADR 0003](docs/adr/0003-code-owned-structure-drift-checked-renderings.md)). Drift
-tests pin those renderings, the [README](README.md)
-against the rules, and each workflow's dogfood copy under
-[`.github/workflows/`](.github/workflows/) against its template under
-[`templates/workflow/`](templates/workflow/)
-([`issue-quality.yml`](templates/workflow/issue-quality.yml),
-[`pr-readiness.yml`](templates/workflow/pr-readiness.yml),
-[`commit-hygiene.yml`](templates/workflow/commit-hygiene.yml)). When one fails,
-update both sides in the same change.
+tests pin those renderings and the [README](README.md) against the rules. A
+separate table-driven test ([`src/scaffolds.test.js`](src/scaffolds.test.js))
+walks `SCAFFOLDS[].files` and asserts every installed destination in this repo,
+Forms, Author guides, workflows, and hooks alike, is byte-identical to its
+`templates/` source. Edit the template, never the installed copy, and re-run
+`node bin/cli.js init` to apply it. When a drift test fails, update both sides in
+the same change.

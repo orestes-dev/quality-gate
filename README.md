@@ -651,10 +651,11 @@ template path and the root PR Author guide), the thin workflows
 `commit-hygiene:*`), and `templates/git-hooks/{commit-msg,pre-commit}` (the git hooks).
 
 This repo's own `.github/`, root `.template.{issue,pr}.md`, and
-`.repo-contract/hooks/{commit-msg,pre-commit}` are a dogfood instance of that bundle: the applied
-Forms, Author guides, and hooks are drift-tested byte-identical to the canonical
-ones, and each dogfood workflow is drift-tested to agree with its consumer template
-on every shared field (they differ only on `uses: ./` vs `@main`).
+`.repo-contract/hooks/{commit-msg,pre-commit}` are a dogfood instance of that bundle:
+a plain consumer install, byte-identical to its source in every path with no
+exception, so `init` reports every file `ok` here exactly as it does anywhere else.
+One table-driven drift test walks the manifest and asserts that
+([ADR 0018](docs/adr/0018-the-dogfood-instance-is-a-plain-consumer.md)).
 
 [`CONTEXT.md`](CONTEXT.md) is the domain glossary: Issue Form, structure, field,
 section, rule, check, scorecard, override.

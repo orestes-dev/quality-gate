@@ -1,26 +1,42 @@
-# Dogfood: run this repo's own commit-hygiene gate against its own pull requests,
-# using the local action (`uses: ./`) rather than the published @main reference.
+# Commit hygiene gate: thin consuming workflow.
+#
+# It calls the shared reusable Action with `object: commit`, pinned to @main so
+# rule/schema changes propagate on the next run with no per-repo bump. Like the
+# PR readiness gate this one hard-fails: a failing check blocks merge. It is the
+# CI mirror of the local repo-contract baseline (Conventional Commits subjects,
+# em-dash policy in the diff, no default-branch commits), so enforcement is
+# un-silenceable rather than un-bypassable (ADR 0002, orestes/dotfiles#52).
 name: Commit Hygiene Gate
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize, labeled, unlabeled]
 permissions:
   pull-requests: write
-  contents: read # actions/checkout via `uses: ./` needs it on private repos
-# Serialize per PR but queue-and-drain rather than cancel: a skipping
-# incidental-label run must never cancel an in-flight validating run (see
-# templates/workflow/commit-hygiene.yml for the full rationale).
+  contents: read
+# Serialize per PR so rapid pushes do not race on labels or the comment. Runs
+# queue and drain in order rather than cancelling: an incidental (non-gate) label
+# event, whose job `if:` is false and which therefore skips, must never cancel an
+# in-flight run that would write a verdict. run() is idempotent (it updates the
+# single checklist comment and re-sets the label), so serial redundant runs
+# converge on the last-writer state without double-posting or corruption.
 concurrency:
   group: commit-hygiene-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 jobs:
-  # Context name, not a tool name; see the template's note and ADR 0013.
+  # The job key is the status-check context name branch protection matches on, so
+  # it names the gate rather than the tool. All three gates were once
+  # `repo-contract`, which left a required-status-check rule unable to tell them
+  # apart (ADR 0013).
   commit-hygiene:
     runs-on: ubuntu-latest
-    # See templates/workflow/commit-hygiene.yml: content events and pushes always
-    # run; label events run only when a human touches the override or a
-    # commit-hygiene:* label, so the gate never re-triggers itself but manual
-    # commit-hygiene-label edits self-heal.
+    # Content edits (opened/edited/reopened) and new pushes (synchronize) always
+    # re-run the gate, since the commits and diff it reads change on a push. Label
+    # events re-run it only when a HUMAN touches a gate-relevant label: the
+    # override toggle, or a commit-hygiene:* label hand-edited (so a manual removal
+    # self-heals). The gate writes its own labels with GITHUB_TOKEN, and GitHub
+    # suppresses those events from triggering runs; the sender check is
+    # defense-in-depth for consumers who wire in a PAT or App token. run() is
+    # diff-based, so any redundant trigger is a no-op.
     if: >-
       github.event.action == 'opened' ||
       github.event.action == 'edited' ||
@@ -30,7 +46,6 @@ jobs:
        (github.event.label.name == 'override:commit-hygiene' ||
         startsWith(github.event.label.name, 'commit-hygiene:')))
     steps:
-      - uses: actions/checkout@v5
-      - uses: ./
+      - uses: orestes-dev/repo-contract@main
         with:
           object: commit

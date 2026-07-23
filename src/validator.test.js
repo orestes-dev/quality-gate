@@ -543,21 +543,6 @@ test("task.yml headings, order, required, and options match FIELDS", () => {
   assert.deepEqual(rendered, expected);
 });
 
-// --- dogfood drift: this repo's applied Issue Form equals the bundle ---
-
-// `templates/form/task.yml` is canonical; `init` copies it verbatim into every
-// consumer. This repo's own `.github/ISSUE_TEMPLATE/task.yml` is one such applied
-// copy (the dogfood), so it must stay byte-identical to the bundle — else what we
-// gate ourselves with silently diverges from what `init` ships. The workflows
-// legitimately differ (`uses: ./` vs `@main`) and are guarded separately; the
-// Issue Form is copied with no edits, so exact equality is the right check.
-test("the dogfood .github Issue Form is byte-identical to the templates bundle", () => {
-  assert.equal(
-    read(".github/ISSUE_TEMPLATE/task.yml"),
-    read("templates/form/task.yml"),
-  );
-});
-
 // --- drift: the issue Author guide is a rendering of the FIELDS descriptor ---
 
 // The issue Author guide is the LLM-facing Markdown rendering of the same
@@ -580,13 +565,6 @@ test("the issue Author guide's section headings and order match FIELDS", () => {
       );
     }
   });
-});
-
-// The root `.template.issue.md` is this repo's dogfood copy of the canonical
-// guide `init` ships; like the Issue Form, it is copied verbatim, so it must
-// stay byte-identical to the bundle or dogfooding drifts from what consumers get.
-test("the dogfood root Author guide is byte-identical to the templates bundle", () => {
-  assert.equal(read(".template.issue.md"), read("templates/markdown/issue.md"));
 });
 
 // The README restates the rules as the human-readable bar. That is accepted

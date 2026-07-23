@@ -2,3 +2,7 @@ node_modules
 .yarn
 yarn.lock
 LICENSE
+# Written by `init` (JSON.stringify, 2-space), not hand-authored. Prettier
+# collapses the scaffolds array back onto one line, so formatting it would make
+# every `init` run dirty the tree.
+.repo-contract.json
