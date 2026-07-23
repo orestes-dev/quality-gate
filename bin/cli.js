@@ -9,15 +9,34 @@ import { validatePr } from "../src/pr-validator.js";
 import { renderCli, PR_PRESENTATION } from "../src/report.js";
 import { init } from "../src/commands/init.js";
 import { sweep } from "../src/commands/sweep.js";
+import { SCAFFOLDS } from "../src/scaffolds.js";
+import { SelectionError } from "../src/selection.js";
+
+/**
+ * The scaffold vocabulary, rendered from the manifest so `--help` cannot drift
+ * from what `init` actually installs.
+ */
+const SCAFFOLD_HELP = SCAFFOLDS.map(
+  ({ id, summary }) => `                     ${id.padEnd(15)}${summary}`,
+).join("\n");
 
 /** Usage banner shared by the help path (stdout, exit 0) and the unknown-command path (stderr, exit 2). */
 const USAGE =
   "usage: repo-contract <init|validate-issue|validate-pr|sweep>\n" +
-  "  init [--force]   scaffold the Issue Form + PR Form, their workflows, and the\n" +
-  "                   repo-contract git hooks into this repo, and activate the\n" +
-  "                   hooks (core.hooksPath=.repo-contract/hooks, relative so\n" +
-  "                   linked worktrees run their own)\n" +
+  "  init [--force] [--only <ids>]\n" +
+  "                   install a selected subset of repo-contract's features into\n" +
+  "                   this repo, and activate the git hooks if selected\n" +
+  "                   (core.hooksPath=.repo-contract/hooks, relative so linked\n" +
+  "                   worktrees run their own)\n" +
   "                   (fails on drifted files; --force upgrades in place)\n" +
+  "                   Scaffolds (--only takes a comma-separated list):\n" +
+  SCAFFOLD_HELP +
+  "\n" +
+  "                   Without --only, a terminal prompts for the ones not yet\n" +
+  "                   installed; otherwise the selection recorded in\n" +
+  "                   .repo-contract.json is honoured, or all of them when the\n" +
+  "                   repo has no record. init only ever adds: dropping an\n" +
+  "                   installed scaffold is `repo-contract uninstall <id>`.\n" +
   "  validate-issue <file> [--title <title>]  validate an issue body file (exit 1 on hard errors)\n" +
   "  validate-pr <file> [--title <title>]     validate a PR body file (exit 1 on hard errors)\n" +
   "  sweep            backfill labels + scorecards on a repo's open issues";
@@ -101,5 +120,8 @@ async function main() {
 
 main().catch((err) => {
   console.error(err.message || err);
-  process.exit(1);
+  // A selection error carries the exit code its kind deserves: 2 for a malformed
+  // request (an unknown scaffold id, like an unknown command), 1 for a
+  // well-formed one refused on policy.
+  process.exit(err instanceof SelectionError ? err.code : 1);
 });

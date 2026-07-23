@@ -1,8 +1,14 @@
-// `init`: scaffold the Issue Form + PR Form, the issue and PR Author guides,
-// their thin workflows, and the vendored repo-contract git hooks into the current
-// repo, activate those hooks by pointing `core.hooksPath` at them, upgrade
-// drifted copies in place under `--force`, and print the Suggested rule to
-// stdout (written to no file).
+// `init`: install a selected subset of repo-contract's three scaffolds into the
+// current repo — the quality gates (both Forms, both Author guides, both
+// workflows), the commit-hygiene gate, and the vendored git hooks — activate the
+// hooks by pointing `core.hooksPath` at them where they were selected, upgrade
+// drifted copies in place under `--force`, record what is now installed in
+// `.repo-contract.json`, and print the Suggested rule to stdout (written to no
+// file).
+//
+// The selection comes from `selection.js` (`--only` -> prompt -> record ->
+// all-in) and the per-scaffold manifest from `scaffolds.js`. `init` only ever
+// adds: teardown is the separate `uninstall` command's job (ADR 0016).
 
 import {
   readFileSync,
@@ -14,111 +20,14 @@ import {
 } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { GitHub } from "../github.js";
 import { checkProtection, isDrift } from "../protection.js";
-import {
-  LABEL_META,
-  PR_LABEL_META,
-  COMMIT_LABEL_META,
-  OVERRIDE_LABEL_META,
-  WONTFIX_LABEL_META,
-} from "../constants.js";
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(HERE, "..", "..");
-
-// The fixed label schema `init` materializes and reconciles: the three gate
-// triples, the three override labels, and `wontfix` (the Rejection selector),
-// each with code-owned metadata (`constants.js`). `wontfix` carries GitHub's own
-// default metadata, so reconciling it is a no-op in a repo that never recoloured
-// it. Flattened to `{ name, color, description }` so the label step is one loop,
-// mirroring the file loop above it.
-export const GATE_LABELS = [
-  LABEL_META,
-  PR_LABEL_META,
-  COMMIT_LABEL_META,
-  OVERRIDE_LABEL_META,
-  WONTFIX_LABEL_META,
-].flatMap((meta) =>
-  Object.entries(meta).map(([name, { color, description }]) => ({
-    name,
-    color,
-    description,
-  })),
-);
-
-// `templates/` is the canonical bundle for the Forms, workflows, and repo-contract
-// git hooks; this repo's `.github/` copies, root `.template.*.md` guides, and
-// `.repo-contract/hooks/` are a dogfood instance drift-checked to match it (ADR 0003,
-// ADR 0002). Every destination is a verbatim byte-for-byte copy of its source,
-// which is what makes exact equality a precise drift signal. The canonical
-// Markdown PR Form is `templates/markdown/pr.md`; `init` writes it byte-for-byte
-// to both the GitHub-rendered `.github/PULL_REQUEST_TEMPLATE.md` and the
-// agent-facing root `.template.pr.md`. Because the two are identical bytes, PR
-// authoring guidance stays in HTML comments so it never prints into the posted
-// PR body (ADR 0003). The git hooks are shipped all-in (no per-feature selection)
-// and read their opt-outs from the committed `.repo-contract.json` via jq.
-const TEMPLATES = [
-  {
-    // Consumer's copy is UI-only; the gate reads structure from its own checkout.
-    from: join(ROOT, "templates", "form", "task.yml"),
-    to: join(".github", "ISSUE_TEMPLATE", "task.yml"),
-  },
-  {
-    // Issue Author guide: the LLM-facing companion to the Issue Form, dropped at
-    // the consumer root under a non-reserved name GitHub ignores.
-    from: join(ROOT, "templates", "markdown", "issue.md"),
-    to: ".template.issue.md",
-  },
-  {
-    from: join(ROOT, "templates", "workflow", "issue-quality.yml"),
-    to: join(".github", "workflows", "issue-quality.yml"),
-  },
-  {
-    // Markdown PR Form, GitHub rendering: GitHub posts it as the PR body.
-    from: join(ROOT, "templates", "markdown", "pr.md"),
-    to: join(".github", "PULL_REQUEST_TEMPLATE.md"),
-  },
-  {
-    // PR Author guide: the same bytes at the consumer root under a non-reserved
-    // name GitHub ignores, the path the Suggested rule points agents at.
-    from: join(ROOT, "templates", "markdown", "pr.md"),
-    to: ".template.pr.md",
-  },
-  {
-    from: join(ROOT, "templates", "workflow", "pr-readiness.yml"),
-    to: join(".github", "workflows", "pr-readiness.yml"),
-  },
-  {
-    // Commit hygiene gate: the CI mirror of the repo-contract baseline. No new
-    // Form or guide; it reads the PR's commits and diff, not a body the author
-    // fills in.
-    from: join(ROOT, "templates", "workflow", "commit-hygiene.yml"),
-    to: join(".github", "workflows", "commit-hygiene.yml"),
-  },
-  {
-    // Repo-contract commit-msg hook (Conventional Commits subject, em-dash
-    // policy). Vendored as a committed hook so it enforces where `~/.dotfiles`
-    // is absent (CI, containers, fresh worktrees); jq/git/sh only, no
-    // node_modules, so it runs before `yarn install` (ADR 0002, ADR 0012). Git
-    // executes it directly via `core.hooksPath`, which is why it is written
-    // executable.
-    from: join(ROOT, "templates", "git-hooks", "commit-msg"),
-    to: join(".repo-contract", "hooks", "commit-msg"),
-    exec: true,
-  },
-  {
-    // Repo-contract pre-commit hook (no default-branch commits, em-dash policy
-    // in staged Markdown). Same vendoring rationale as commit-msg. Repo-specific
-    // checks belong in .repo-contract/hooks/local/pre-commit, which `init` never
-    // writes.
-    from: join(ROOT, "templates", "git-hooks", "pre-commit"),
-    to: join(".repo-contract", "hooks", "pre-commit"),
-    exec: true,
-  },
-];
+import { CONFIG_FILENAME, SCAFFOLD, SCAFFOLD_IDS } from "../constants.js";
+import { filesFor, labelsFor, scaffold, selected } from "../scaffolds.js";
+import { loadConfig, writeScaffolds } from "../config.js";
+import { resolveSelection } from "../selection.js";
+import { canPrompt, promptForScaffolds } from "../prompt.js";
 
 // A destination is `absent`, byte-identical (`ok`), or `drift` (stale upstream
 // or locally customized — indistinguishable without a version marker we don't
@@ -177,12 +86,18 @@ prints this and writes it nowhere):
       npx github:orestes-dev/repo-contract --help`;
 
 /**
- * Classify each template's destination against the bundled source by exact
- * byte comparison. Verbatim copies make equality an exact drift signal.
+ * Classify a selection's destinations against their bundled sources by exact byte
+ * comparison. Verbatim copies make equality an exact drift signal.
+ *
+ * Per-scaffold, so an unselected scaffold's files are neither classified nor
+ * reported here: they are neither installed nor missing, and only a *selected*
+ * scaffold's drift blocks the atomic read-only run (ADR 0016). Files on disk that
+ * no selected scaffold claims are orphans, found by {@link findOrphans}.
+ * @param {string[]} ids - The scaffolds being installed.
  * @returns {{to: string, dest: string, desired: string, exec: boolean, state: string}[]}
  */
-function classify() {
-  return TEMPLATES.map(({ from, to, exec = false }) => {
+function classify(ids) {
+  return filesFor(ids).map(({ from, to, exec = false }) => {
     const dest = resolve(process.cwd(), to);
     const desired = readFileSync(from, "utf8");
     if (!existsSync(dest)) return { to, dest, desired, exec, state: ABSENT };
@@ -314,21 +229,32 @@ function resolveLabelClient() {
 }
 
 /**
- * Create or repair every label in the fixed schema, reporting per label the same
+ * Create or repair every label the selection needs, reporting per label the same
  * way the file loop reports per file (created / repaired / ok). With no client
  * (no credentials or repo context), report a single skipped line and return: the
  * file scaffolding above has already succeeded and the exit code is unchanged.
+ *
+ * The schema follows the selection, not the package: a repo that installed only
+ * `git-hooks` gets no labels at all, and one that skipped `commit-hygiene` never
+ * sees its triple appear in the repo's label list. An unselected scaffold's
+ * labels are left alone rather than deleted; removal is `uninstall`'s to do.
  * @param {object} params
  * @param {GitHub|null} params.client - The API client, or null to skip.
  * @param {(line: string) => void} params.log
+ * @param {string[]} params.ids - The scaffolds being installed.
  * @returns {Promise<void>}
  */
-export async function ensureGateLabels({ client, log }) {
+export async function ensureGateLabels({ client, log, ids }) {
   if (!client) {
     log("skip     labels (no GitHub credentials or repo context)");
     return;
   }
-  for (const { name, color, description } of GATE_LABELS) {
+  const wanted = labelsFor(ids);
+  if (wanted.length === 0) {
+    log("skip     labels (the installed scaffolds need none)");
+    return;
+  }
+  for (const { name, color, description } of wanted) {
     const state = await client.ensureLabel(name, color, description);
     log(`${state.padEnd(9)}${name}`);
   }
@@ -389,48 +315,131 @@ export async function reportProtection({ client, log, cwd = process.cwd() }) {
 }
 
 /**
- * Copy the Issue Form, PR Form, their workflows, and the repo-contract git hooks
- * into the current working directory, then print the Suggested rule to stdout.
+ * Find the scaffolds this repo has on disk but does not record as installed.
  *
- * Absent files are created. Byte-identical files are left untouched (`init` is
- * idempotent). A drifted file — stale or locally customized — makes a plain run
- * a write-nothing report that exits 1; re-run with `--force` to overwrite only
- * the files that differ. Warns (but proceeds) when not at a repo root. The
- * Suggested rule is printed on success and written to no file.
+ * An orphan is the residue of a narrowed selection, or of a repo scaffolded
+ * before the manifest existed. It is reported and never touched: `init` is
+ * additive everywhere else (it reports the gate-activation gap and never repairs
+ * it, it never writes `.repo-contract/hooks/local`), and deleting workflows or
+ * hooks mid-run is destructive. Teardown is `uninstall`'s job.
  *
- * After the files, activate them: each vendored hook is written executable and
- * `core.hooksPath` is set to the relative `.repo-contract/hooks`, repairing any
- * other value (ADR 0012, ADR 0017). That is what makes a checkout which never ran a package-manager
- * install enforce the baseline, and what keeps a linked worktree on the hooks
- * committed to its own branch.
+ * Detection reaches the filesystem and `core.hooksPath`, deliberately not the
+ * remote. The report exists to answer "is this still enforcing?": an orphaned
+ * `git-hooks` still pointed at by `core.hooksPath` fires on every commit, while
+ * an orphaned scaffold's labels sit inert on the remote and cost credentials to
+ * read.
+ * @param {string[]} ids - The scaffolds being installed.
+ * @param {string} [cwd]
+ * @returns {{id: string, files: string[], enforcing: boolean}[]}
+ */
+export function findOrphans(ids, cwd = process.cwd()) {
+  return SCAFFOLD_IDS.filter((id) => !ids.includes(id))
+    .map((id) => {
+      const { files, activatesHooks } = scaffold(id);
+      return {
+        id,
+        files: files
+          .map((f) => f.to)
+          .filter((to) => existsSync(resolve(cwd, to))),
+        enforcing: activatesHooks && readHooksPath(cwd) === HOOKS_PATH,
+      };
+    })
+    .filter((o) => o.files.length > 0 || o.enforcing);
+}
+
+/**
+ * Report each orphan as one line, plus a second line for one that is still
+ * actively enforcing, which is the case an operator most needs to see.
+ * @param {object} params
+ * @param {{id: string, files: string[], enforcing: boolean}[]} params.orphans
+ * @param {(line: string) => void} params.log
+ * @returns {void}
+ */
+export function reportOrphans({ orphans, log }) {
+  for (const { id, files, enforcing } of orphans) {
+    log(
+      `orphan   ${id} (${files.length} file(s) on disk, not in the manifest: ${files.join(", ")})`,
+    );
+    if (enforcing) {
+      log(
+        `         core.hooksPath still points at ${HOOKS_PATH}, so these hooks run on every ` +
+          `commit despite not being recorded. Remove them with: repo-contract uninstall ${id}`,
+      );
+    }
+  }
+}
+
+/**
+ * Copy a selected subset of the scaffolds into the current working directory,
+ * record what is now installed, and print the Suggested rule to stdout.
  *
- * Then reconcile the fixed label schema (the three gate triples, the three
- * override labels, and `wontfix`): create any missing label, repair any whose
- * color/description drifted. This needs credentials and repo context, discovered
- * the way `sweep` does (`gh auth token`, `gh repo view`); with neither the label
- * step is reported as skipped and the file scaffolding still stands.
+ * Which scaffolds is resolved by `--only <ids>` -> interactive prompt (TTY) ->
+ * the recorded manifest -> all-in (`selection.js`). `init` only ever adds: a
+ * selection that would drop an installed scaffold is refused and pointed at
+ * `uninstall`, so a command whose job is to install can never open a gap between
+ * the manifest and what is enforcing.
  *
- * Finally, report (never repair) whether the merge-blocking PR gate is actually a
+ * Within the selection, absent files are created. Byte-identical files are left
+ * untouched (`init` is idempotent). A drifted file — stale or locally customized —
+ * makes a plain run a write-nothing report that exits 1; re-run with `--force` to
+ * overwrite only the files that differ. Only a *selected* scaffold's drift blocks
+ * that run. Warns (but proceeds) when not at a repo root. The Suggested rule is
+ * printed on success and written to no file.
+ *
+ * Files belonging to an unselected scaffold are orphans: reported, never written,
+ * never removed, never blocking (see {@link findOrphans}).
+ *
+ * After the files, activate them, if the selection includes the hooks: each
+ * vendored hook is written executable and `core.hooksPath` is set to the relative
+ * `.repo-contract/hooks`, repairing any other value (ADR 0012, ADR 0017). That is
+ * what makes a checkout which never ran a package-manager install enforce the
+ * baseline, and what keeps a linked worktree on the hooks committed to its own
+ * branch.
+ *
+ * Then reconcile the label schema the selection needs: create any missing label,
+ * repair any whose color/description drifted. This needs credentials and repo
+ * context, discovered the way `sweep` does (`gh auth token`, `gh repo view`);
+ * with neither the label step is reported as skipped and the file scaffolding
+ * still stands.
+ *
+ * Then report (never repair) whether the merge-blocking PR gate is actually a
  * required status check on the default branch. Vendoring the workflow makes the
  * check run; only a required-status-check rule (a per-repo setting nothing here
  * can commit) makes it block, and that gap is otherwise silent (ADR 0014). The
  * report is advisory and never affects the exit code.
- * @param {string[]} [argv] - Remaining CLI args; `--force` upgrades in place.
+ *
+ * Finally, write the selection to `.repo-contract.json`. The manifest is written
+ * last, after everything it claims has actually landed, so it never records an
+ * install that a mid-run failure prevented.
+ * @param {string[]} [argv] - Remaining CLI args; `--force` upgrades in place,
+ *   `--only <ids>` selects scaffolds explicitly.
  * @returns {Promise<void>}
  */
 export async function init(argv = []) {
   const force = argv.includes("--force");
+  const cwd = process.cwd();
 
   // Soft guard: `.github/` is only read at the repo root. Warn but proceed;
   // scaffolding into a fresh dir before `git init` is legitimate.
-  if (!existsSync(resolve(process.cwd(), ".git"))) {
+  if (!existsSync(resolve(cwd, ".git"))) {
     console.warn(
       "warning: no .git in the current directory. GitHub only reads .github/ " +
         "from the repository root; run this there or the workflow will not run.",
     );
   }
 
-  const entries = classify();
+  // Resolve the selection before touching anything: a refusal or a cancelled
+  // prompt must leave the repo exactly as it was.
+  const recorded = loadConfig(cwd).scaffolds;
+  const { ids, source } = await resolveSelection({
+    argv,
+    recorded,
+    interactive: canPrompt(),
+    prompt: promptForScaffolds,
+  });
+  console.log(`Installing ${ids.join(", ")} (selected by: ${source})\n`);
+
+  const entries = classify(ids);
   const drifted = entries.filter((e) => e.state === DRIFT);
 
   // Atomic: any drift makes a plain run read-only. Report the full picture and
@@ -464,8 +473,19 @@ export async function init(argv = []) {
     );
   }
 
+  // Activation follows the manifest: only a scaffold that declares it claims
+  // `core.hooksPath`, so a repo that did not install the hooks never has its git
+  // config repointed at a directory it does not own.
+  const activates = selected(ids).some((s) => s.activatesHooks);
   console.log("\nActivation:");
-  const activation = ensureHooksPath({ log: (line) => console.log(line) });
+  const activation = activates
+    ? ensureHooksPath({ log: (line) => console.log(line) })
+    : "not-installed";
+  if (!activates) {
+    console.log(
+      `skip     core.hooksPath (${SCAFFOLD.GIT_HOOKS} is not installed)`,
+    );
+  }
 
   const client = resolveLabelClient();
 
@@ -473,32 +493,90 @@ export async function init(argv = []) {
   await ensureGateLabels({
     client,
     log: (line) => console.log(line),
+    ids,
   });
 
-  console.log("\nProtection:");
-  await reportProtection({ client, log: (line) => console.log(line) });
+  // Protection only concerns the PR gate, so it is only worth reading where that
+  // gate was installed. checkProtection would report it as not-installed anyway;
+  // skipping avoids spending an API call to say so.
+  if (ids.includes(SCAFFOLD.QUALITY_GATES)) {
+    console.log("\nProtection:");
+    await reportProtection({ client, log: (line) => console.log(line), cwd });
+  }
 
-  // The hook paragraph reports what actually happened: claiming the hooks are
-  // live where activation was skipped would restate the bug this step fixes.
-  const hooksNote =
-    activation === "skipped"
-      ? `The git hooks are NOT active: there is no git repository here yet. Run \`git init\` and ` +
-        `then \`git config core.hooksPath ${HOOKS_PATH}\` (or re-run this command).\n`
-      : `The git hooks are live in this checkout now (core.hooksPath=${HOOKS_PATH}, a relative value, ` +
-        "so each linked worktree runs the hooks committed on its own branch).\n";
+  const orphans = findOrphans(ids, cwd);
+  if (orphans.length > 0) {
+    console.log("\nNot installed, but present on disk:");
+    reportOrphans({ orphans, log: (line) => console.log(line) });
+  }
 
-  console.log(
-    `\nDone. Commit these files to opt this repo into the issue quality and PR readiness gates.\n` +
-      hooksNote +
+  // The manifest goes last, once everything it claims has landed, so it never
+  // records an install a mid-run failure prevented.
+  writeScaffolds(ids, cwd);
+  console.log(`\nRecorded in ${CONFIG_FILENAME}: ${ids.join(", ")}`);
+
+  console.log(`\nDone. ${nextSteps(ids, activation)}`);
+
+  // The rule points agents at the Author guides, which only exist where
+  // `quality-gates` was installed. Printing it regardless would hand the operator
+  // a rule naming two files their repo does not have.
+  if (ids.includes(SCAFFOLD.QUALITY_GATES)) {
+    console.log(`\n${SUGGESTED_RULE}`);
+  }
+}
+
+/**
+ * The closing paragraph, assembled from the scaffolds that were actually
+ * installed. Telling an operator to require the `pr-readiness` context, or that
+ * the hooks are live, when they installed neither would be the same class of
+ * mistake the activation report exists to prevent: prose that describes the
+ * package rather than this repo.
+ * @param {string[]} ids - The scaffolds installed.
+ * @param {string} activation - The outcome of the `core.hooksPath` step.
+ * @returns {string}
+ */
+function nextSteps(ids, activation) {
+  const parts = [
+    `Commit these files to opt this repo into: ${ids.join(", ")}.`,
+  ];
+
+  if (ids.includes(SCAFFOLD.GIT_HOOKS)) {
+    // Reports what actually happened: claiming the hooks are live where
+    // activation was skipped would restate the bug that step exists to fix.
+    parts.push(
+      activation === "skipped"
+        ? `The git hooks are NOT active: there is no git repository here yet. Run \`git init\` and ` +
+            `then \`git config core.hooksPath ${HOOKS_PATH}\` (or re-run this command).`
+        : `The git hooks are live in this checkout now (core.hooksPath=${HOOKS_PATH}, a relative value, ` +
+            "so each linked worktree runs the hooks committed on its own branch).",
       "core.hooksPath is per-clone git config, never committed: run this command once in every " +
-      "fresh clone or worktree, or the hooks sit on disk unread. CI keeps the un-bypassable copy " +
-      "of the same rules in the commit-hygiene gate.\n" +
-      "The issue gate only labels issues going forward. To backfill labels + scorecards " +
-      "onto the existing open backlog, run: repo-contract sweep\n" +
-      "The PR gate blocks merge only once its 'pr-readiness' context is a required status " +
-      "check on the default branch (see the Protection line above); vendoring the workflow " +
-      "makes it run, not block, and requiring the context stays a deliberate admin act.",
-  );
+        "fresh clone or worktree, or the hooks sit on disk unread.",
+    );
+  }
 
-  console.log(`\n${SUGGESTED_RULE}`);
+  if (ids.includes(SCAFFOLD.COMMIT_HYGIENE)) {
+    parts.push(
+      "CI keeps the un-bypassable copy of the commit baseline in the commit-hygiene gate.",
+    );
+  }
+
+  if (ids.includes(SCAFFOLD.QUALITY_GATES)) {
+    parts.push(
+      "The issue gate only labels issues going forward. To backfill labels + scorecards " +
+        "onto the existing open backlog, run: repo-contract sweep",
+      "The PR gate blocks merge only once its 'pr-readiness' context is a required status " +
+        "check on the default branch (see the Protection line above); vendoring the workflow " +
+        "makes it run, not block, and requiring the context stays a deliberate admin act.",
+    );
+  }
+
+  const missing = SCAFFOLD_IDS.filter((id) => !ids.includes(id));
+  if (missing.length > 0) {
+    parts.push(
+      `Not installed: ${missing.map((id) => `${id} (${scaffold(id).summary})`).join("; ")}. ` +
+        `Add one later by re-running init and choosing it, or with --only ${[...ids, missing[0]].join(",")}.`,
+    );
+  }
+
+  return parts.join("\n");
 }

@@ -1,8 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 
-import { GATE_LABELS, ensureGateLabels, reportProtection } from "./init.js";
+import {
+  ensureGateLabels,
+  reportProtection,
+  findOrphans,
+  reportOrphans,
+  HOOKS_PATH,
+} from "./init.js";
+import { labelsFor, filesFor } from "../scaffolds.js";
 import {
   OVERRIDE_LABEL,
   PR_OVERRIDE_LABEL,
@@ -11,7 +22,13 @@ import {
   WONTFIX_LABEL_META,
   GATE_CONTEXT,
   MERGE_BLOCKING_GATE,
+  SCAFFOLD,
+  SCAFFOLD_IDS,
 } from "../constants.js";
+
+// The whole package: what an all-in install reconciles, and the baseline every
+// per-scaffold assertion below is carved out of.
+const ALL_LABELS = labelsFor(SCAFFOLD_IDS);
 
 // The repo root, where `.github/workflows/pr-readiness.yml` actually lives, so
 // `reportProtection` sees the merge-blocking workflow as vendored and proceeds to
@@ -30,11 +47,11 @@ const stubGh = (checks) => ({
   }),
 });
 
-// The fixed schema is the three gate triples, the three override labels, and
-// `wontfix`.
-test("GATE_LABELS is the full fixed schema, override labels included", () => {
-  assert.equal(GATE_LABELS.length, 13);
-  const names = GATE_LABELS.map((l) => l.name);
+// An all-in install still reconciles the whole schema: the three gate triples,
+// the three override labels, and `wontfix`.
+test("an all-in selection covers the full label schema, overrides included", () => {
+  assert.equal(ALL_LABELS.length, 13);
+  const names = ALL_LABELS.map((l) => l.name);
   for (const override of [
     OVERRIDE_LABEL,
     PR_OVERRIDE_LABEL,
@@ -42,9 +59,136 @@ test("GATE_LABELS is the full fixed schema, override labels included", () => {
   ]) {
     assert.ok(names.includes(override), `missing ${override}`);
   }
-  for (const { color, description } of GATE_LABELS) {
+  for (const { color, description } of ALL_LABELS) {
     assert.match(color, /^[0-9a-f]{6}$/, "each label carries a hex color");
     assert.ok(description.length > 0, "each label carries a description");
+  }
+});
+
+// Labels follow the selection, which is the point of the per-scaffold manifest:
+// nothing appears in a repo's label list for a gate it did not install.
+test("each scaffold claims exactly its own labels", () => {
+  const quality = labelsFor([SCAFFOLD.QUALITY_GATES]).map((l) => l.name);
+  const commit = labelsFor([SCAFFOLD.COMMIT_HYGIENE]).map((l) => l.name);
+
+  assert.ok(quality.includes(OVERRIDE_LABEL));
+  assert.ok(quality.includes(PR_OVERRIDE_LABEL));
+  assert.ok(
+    quality.includes(WONTFIX_LABEL),
+    "the Rejection selector is the issue gate's",
+  );
+  assert.ok(!quality.includes(COMMIT_OVERRIDE_LABEL));
+
+  assert.ok(commit.includes(COMMIT_OVERRIDE_LABEL));
+  assert.ok(
+    commit.every(
+      (name) =>
+        name.startsWith("commit-hygiene") || name === COMMIT_OVERRIDE_LABEL,
+    ),
+  );
+
+  // The hooks run locally against a committed config; nothing on the remote.
+  assert.deepEqual(labelsFor([SCAFFOLD.GIT_HOOKS]), []);
+
+  // Together the three partition the schema, with no overlap and nothing left over.
+  assert.equal(quality.length + commit.length, ALL_LABELS.length);
+});
+
+// Every file belongs to exactly one scaffold, which is what makes "touch only
+// that scaffold" precise for `init` and for the follow-up `uninstall`.
+test("the three scaffolds partition the vendored files", () => {
+  const all = filesFor(SCAFFOLD_IDS).map((f) => f.to);
+  const perScaffold = SCAFFOLD_IDS.flatMap((id) =>
+    filesFor([id]).map((f) => f.to),
+  );
+  assert.deepEqual([...all].sort(), [...perScaffold].sort());
+  assert.equal(new Set(all).size, all.length, "no file is claimed twice");
+});
+
+// A scratch git repo with a chosen set of scaffold files already on disk, so
+// orphan detection can be exercised against a real filesystem and a real
+// `core.hooksPath`.
+function withRepo(present) {
+  const dir = mkdtempSync(join(tmpdir(), "rc-orphan-"));
+  execFileSync("git", ["init", "-q", dir], { stdio: "ignore" });
+  for (const { to } of filesFor(present)) {
+    const dest = join(dir, to);
+    mkdirSync(dirname(dest), { recursive: true });
+    writeFileSync(dest, "whatever bytes");
+  }
+  return dir;
+}
+
+// An orphan is a scaffold present on disk that the manifest does not record. It
+// is reported and never removed: `init` is additive everywhere else, and
+// deleting live workflows or hooks mid-run is destructive. Teardown is
+// `uninstall`'s job.
+test("findOrphans reports files on disk that the selection does not claim", () => {
+  const dir = withRepo([SCAFFOLD.QUALITY_GATES]);
+  try {
+    const orphans = findOrphans([SCAFFOLD.GIT_HOOKS], dir);
+    assert.equal(orphans.length, 1);
+    assert.equal(orphans[0].id, SCAFFOLD.QUALITY_GATES);
+    assert.equal(
+      orphans[0].files.length,
+      filesFor([SCAFFOLD.QUALITY_GATES]).length,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a selected scaffold's files are never orphans", () => {
+  const dir = withRepo(SCAFFOLD_IDS);
+  try {
+    assert.deepEqual(findOrphans(SCAFFOLD_IDS, dir), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an unselected scaffold that is absent from disk is not an orphan", () => {
+  const dir = withRepo([]);
+  try {
+    assert.deepEqual(findOrphans([SCAFFOLD.GIT_HOOKS], dir), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Detection reaches `core.hooksPath` because the report exists to answer "is this
+// still enforcing?" — orphaned hooks that git is still pointed at fire on every
+// commit, which is exactly the state an operator needs told.
+test("orphaned hooks still pointed at by core.hooksPath report as enforcing", () => {
+  const dir = withRepo([SCAFFOLD.GIT_HOOKS]);
+  try {
+    execFileSync("git", ["-C", dir, "config", "core.hooksPath", HOOKS_PATH], {
+      stdio: "ignore",
+    });
+    const [orphan] = findOrphans([SCAFFOLD.QUALITY_GATES], dir);
+    assert.equal(orphan.id, SCAFFOLD.GIT_HOOKS);
+    assert.equal(orphan.enforcing, true);
+
+    const lines = [];
+    reportOrphans({ orphans: [orphan], log: (l) => lines.push(l) });
+    assert.match(lines[0], /^orphan\s+git-hooks/);
+    assert.match(lines[1], /still points at/);
+    assert.match(lines[1], /repo-contract uninstall git-hooks/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("orphaned hooks that git is not pointed at report as not enforcing", () => {
+  const dir = withRepo([SCAFFOLD.GIT_HOOKS]);
+  try {
+    const [orphan] = findOrphans([SCAFFOLD.QUALITY_GATES], dir);
+    assert.equal(orphan.enforcing, false);
+    const lines = [];
+    reportOrphans({ orphans: [orphan], log: (l) => lines.push(l) });
+    assert.equal(lines.length, 1, "no enforcement warning where none applies");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -67,9 +211,13 @@ test("ensureGateLabels reports created / repaired / ok per label", async () => {
     [PR_OVERRIDE_LABEL]: "repaired",
   });
   const lines = [];
-  await ensureGateLabels({ client, log: (l) => lines.push(l) });
+  await ensureGateLabels({
+    client,
+    log: (l) => lines.push(l),
+    ids: SCAFFOLD_IDS,
+  });
 
-  assert.equal(client.calls.length, GATE_LABELS.length);
+  assert.equal(client.calls.length, ALL_LABELS.length);
   assert.ok(
     lines.some((l) => l.startsWith("created") && l.includes(OVERRIDE_LABEL)),
   );
@@ -85,8 +233,8 @@ test("ensureGateLabels reports created / repaired / ok per label", async () => {
 // never applies it, so nothing would create it on demand. Its metadata is
 // GitHub's own default, so reconciling it in a repo that never recoloured the
 // label is a no-op.
-test("GATE_LABELS carries wontfix with GitHub's default metadata", () => {
-  const wontfix = GATE_LABELS.find((l) => l.name === WONTFIX_LABEL);
+test("the schema carries wontfix with GitHub's default metadata", () => {
+  const wontfix = ALL_LABELS.find((l) => l.name === WONTFIX_LABEL);
   assert.ok(wontfix, "wontfix is part of the fixed schema");
   assert.equal(wontfix.color, "ffffff");
   assert.equal(wontfix.description, "This will not be worked on");
@@ -99,7 +247,11 @@ test("GATE_LABELS carries wontfix with GitHub's default metadata", () => {
 test("ensureGateLabels reconciles wontfix alongside the gate labels", async () => {
   const client = fakeClient({ [WONTFIX_LABEL]: "created" });
   const lines = [];
-  await ensureGateLabels({ client, log: (l) => lines.push(l) });
+  await ensureGateLabels({
+    client,
+    log: (l) => lines.push(l),
+    ids: SCAFFOLD_IDS,
+  });
 
   const call = client.calls.find((c) => c.name === WONTFIX_LABEL);
   assert.deepEqual(call, {
@@ -114,9 +266,30 @@ test("ensureGateLabels reconciles wontfix alongside the gate labels", async () =
 
 test("ensureGateLabels skips (no write) when there are no credentials", async () => {
   const lines = [];
-  await ensureGateLabels({ client: null, log: (l) => lines.push(l) });
+  await ensureGateLabels({
+    client: null,
+    log: (l) => lines.push(l),
+    ids: SCAFFOLD_IDS,
+  });
   assert.equal(lines.length, 1);
   assert.match(lines[0], /^skip\s+labels \(no GitHub credentials/);
+});
+
+// A hooks-only install needs nothing on the remote, so the step reports why it
+// wrote nothing rather than silently looping zero times.
+test("ensureGateLabels skips when the selection needs no labels", async () => {
+  const client = fakeClient({});
+  const lines = [];
+  await ensureGateLabels({
+    client,
+    log: (l) => lines.push(l),
+    ids: [SCAFFOLD.GIT_HOOKS],
+  });
+  assert.equal(client.calls.length, 0);
+  assert.match(
+    lines[0],
+    /^skip\s+labels \(the installed scaffolds need none\)/,
+  );
 });
 
 test("reportProtection skips (no read) when there are no credentials", async () => {
