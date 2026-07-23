@@ -11,12 +11,15 @@ yarn test
 # Validate an issue body file the way CI would; title optional
 node bin/cli.js validate-issue path/to/body.md --title "feat(x): do the thing"
 
-# Scaffold the repo-contract bundle into another repo (9 files): the Issue Form,
-# the PR Form, the two Author guides, the three gate workflows (issue-quality,
-# pr-readiness, commit-hygiene), and the two vendored git hooks
-# (.repo-contract/hooks/pre-commit, .repo-contract/hooks/commit-msg), then activates those hooks by setting core.hooksPath.
+# Install repo-contract into another repo. On a terminal this prompts for which
+# scaffolds to install; `--only` selects them without asking. All three (9 files)
+# are the Issue Form, the PR Form, the two Author guides, the three gate workflows
+# (issue-quality, pr-readiness, commit-hygiene), and the two vendored git hooks
+# (.repo-contract/hooks/pre-commit, .repo-contract/hooks/commit-msg), whose
+# activation sets core.hooksPath.
 # `--force` upgrades drifted copies in place.
 node bin/cli.js init
+node bin/cli.js init --only git-hooks,commit-hygiene
 
 # Backfill labels/scorecards across an existing backlog
 # (credentials from `gh auth token`, repo from `gh repo view`)
@@ -29,6 +32,24 @@ Plain JS type-checked with `tsc` (`checkJs` + JSDoc) keeps the action buildless:
 it runs straight from source, so consumers reference it at `@main` with no
 compiled artifact to release, and no one is forced onto a Node version new
 enough to strip types.
+
+## Dependencies are budgeted per surface
+
+The baseline is enforced on three execution surfaces, and each may assume a
+different toolchain is already present (ADR
+[0015](docs/adr/0015-commit-hooks-keep-the-sh-jq-dependency-budget.md)). The
+**vendored git hooks** keep the strictest budget: POSIX `sh`, `git`, and `jq`,
+never `node_modules`, because they run at commit time in checkouts that have not
+been provisioned. The **CI gate** and the **CLI** are looser: both run node with
+an install behind them.
+
+`@clack/prompts`, which draws `init`'s scaffold prompt, is the CLI surface's first
+runtime dependency and lives in [`src/prompt.js`](src/prompt.js) alone. It is
+pinned to an exact version, not a range: `npx`-from-git resolves the CLI's
+dependencies with no lockfile, so the pin is the only thing between a consumer and
+whatever the range would float to on the day they run it. Adding a runtime
+dependency to the hooks is not a judgement call to weigh; the budget forecloses
+it.
 
 ## Repo-contract git hooks
 
@@ -72,10 +93,13 @@ file means full enforcement with no opt-outs.
 
 ## Labels
 
-`init` owns the fixed label schema: the three gate triples (`issue-quality:*`,
+`init` owns the label schema: the three gate triples (`issue-quality:*`,
 `pr-readiness:*`, `commit-hygiene:*`), the three override labels
 (`override:issue-quality`, `override:pr-readiness`, `override:commit-hygiene`),
-and `wontfix`. Every label's colour and description live in code
+and `wontfix`. Each label belongs to a scaffold
+([`src/scaffolds.js`](src/scaffolds.js)) and is reconciled only where that
+scaffold is installed, so nothing appears in a repo's label list for a gate it
+did not take. Every label's colour and description live in code
 ([`src/constants.js`](src/constants.js): `LABEL_META`, `PR_LABEL_META`,
 `COMMIT_LABEL_META`, `OVERRIDE_LABEL_META`, `WONTFIX_LABEL_META`), so `init` can
 both **create** any missing label and **reconcile** one whose colour or

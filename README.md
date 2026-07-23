@@ -24,9 +24,10 @@ core (`src/rules.js`).
   issue it closes is gate-cleared. Hard-fails CI.
 - **Commit-hygiene gate**: the CI mirror of the local git hooks (Conventional
   Commits, em-dash policy, no default-branch commits). Hard-fails CI.
-- **CLI**: `init` scaffolds the whole bundle into a repo; `validate-issue` /
-  `validate-pr` run the same checks locally before you open the object; `sweep`
-  backfills labels across an existing backlog.
+- **CLI**: `init` installs a chosen subset of the above into a repo (see
+  [Scaffolds](#scaffolds)); `validate-issue` / `validate-pr` run the same checks
+  locally before you open the object; `sweep` backfills labels across an existing
+  backlog.
 - **Git hooks**: committed hooks that enforce the same baseline as the
   commit-hygiene gate, locally, with `sh` + `git` + `jq` only, never
   `node_modules`, so they run before any install. That strict dependency budget
@@ -62,7 +63,30 @@ Opt a repo in from its root:
 npx github:orestes-dev/repo-contract init
 ```
 
-This drops seven files, which together are the opt-in:
+On a terminal this asks which **scaffolds** to install; anywhere else it installs
+all of them. The three scaffolds and the flags that pick them are below.
+
+### Scaffolds
+
+repo-contract is installed in three independently-selectable units. There is no
+dependency between them, so any subset installs coherently (ADR
+[0016](docs/adr/0016-init-scaffolds-are-three-coupled-units.md)):
+
+| Scaffold         | What it installs                                                                 |
+| ---------------- | -------------------------------------------------------------------------------- |
+| `quality-gates`  | the issue gate and the PR gate: both Forms, both Author guides, both workflows   |
+| `commit-hygiene` | the commit-hygiene workflow, the un-silenceable CI mirror of the commit baseline |
+| `git-hooks`      | the two vendored git hooks, bypassable fast local feedback on that same baseline |
+
+The issue and PR gates are **one** scaffold rather than two, because the PR gate's
+linked-issue check reads the issue gate's `issue-quality:*` labels: installing the
+PR gate alone would fail every PR that closes an issue. Coupling them dissolves
+that dependency instead of managing it. The commit-hygiene gate and the git hooks
+enforce the same baseline on different surfaces, and different repos genuinely
+want one without the other (CI enforcement without imposing hooks on contributors,
+or the reverse), so they stay separate.
+
+`quality-gates` drops seven files:
 
 - `.github/ISSUE_TEMPLATE/task.yml`: the Issue Form (GitHub-UI rendering of the
   `src/rules.js` structure, drift-checked against it).
@@ -76,15 +100,42 @@ This drops seven files, which together are the opt-in:
   PR Form, the path an agent drafts a PR body against.
 - `.github/workflows/pr-readiness.yml`: a thin workflow calling the shared Action
   at `@main` for the PR gate (merge-blocking).
-- `.github/workflows/commit-hygiene.yml`: a thin workflow calling the shared Action
-  at `@main` for the commit-hygiene gate (merge-blocking). No Form or Author guide:
-  it reads the PR's commits and diff, not a body the author fills in.
 
-Commit all seven. `init` also vendors two [git hooks](#git-hooks) under
-`.repo-contract/hooks/`
-and activates them in this checkout by setting `core.hooksPath`.
+`commit-hygiene` drops one: `.github/workflows/commit-hygiene.yml`, a thin
+workflow calling the shared Action at `@main` (merge-blocking). No Form or Author
+guide: it reads the PR's commits and diff, not a body the author fills in.
 
-`init` then creates the fixed label schema in the repo: the three gate triples
+`git-hooks` vendors two [git hooks](#git-hooks) under `.repo-contract/hooks/` and
+activates them in this checkout by setting `core.hooksPath`.
+
+Commit whatever lands. Which scaffolds a run installs is decided by the first of
+these that applies:
+
+1. `--only <ids>`, a comma-separated list: `init --only git-hooks,commit-hygiene`.
+   The scriptable path. An unrecognized id exits 2 and lists the known ones.
+2. An interactive prompt, when both ends are a terminal and something is not yet
+   installed. It offers only the **absent** scaffolds and lists the installed ones
+   above as fixed context.
+3. The selection already recorded in `.repo-contract.json`.
+4. All three, when the repo has no record at all.
+
+**`init` only ever adds.** A selection that would drop an installed scaffold exits
+non-zero, names what it would drop, and points at `uninstall`; deselection has
+exactly one home, so a command whose job is to install can never leave a scaffold
+enforcing under a manifest that denies it. In a fully-installed repo there is
+nothing left to offer, so a re-run or an `init --force` upgrade never stops for
+input.
+
+The selection is recorded as a `scaffolds` array in
+[`.repo-contract.json`](#enforcement-opt-outs), rewritten on every run. **An absent
+key means none installed**, not all-in: a repo scaffolded before the manifest
+existed takes one `init` run to record what it already has, done deliberately
+rather than inferred from disk. Files belonging to a scaffold the manifest does
+not list are **orphans**: `init` reports them, and never creates, removes, or
+blocks on them. An orphaned `git-hooks` that `core.hooksPath` still points at is
+reported as still enforcing, since that is the case worth knowing about.
+
+`init` then creates the label schema the selection needs. All-in, that is the three gate triples
 (`issue-quality:*`, `pr-readiness:*`, `commit-hygiene:*`), the three override
 labels (`override:issue-quality`, `override:pr-readiness`, `override:commit-hygiene`),
 and `wontfix` (which marks an issue as a [rejection](#rejections)), each with a
@@ -95,9 +146,10 @@ in every repo. This step needs credentials and repo context (discovered from
 `gh auth token` and `gh repo view`); with neither it is reported as skipped and
 the file scaffolding still succeeds.
 
-Then `init` prints a **Suggested rule** to stdout: an agent-guidance snippet
-pointing at the issue and PR Author guides and at the pre-flight step, for you to
-paste into your own agent-rules file (`AGENTS.md`, `CLAUDE.md`, editor rules).
+Where `quality-gates` was installed, `init` then prints a **Suggested rule** to
+stdout: an agent-guidance snippet pointing at the issue and PR Author guides and
+at the pre-flight step, for you to paste into your own agent-rules file
+(`AGENTS.md`, `CLAUDE.md`, editor rules).
 `init` writes it to no file, so it never clobbers a file it does not own. The
 snippet names no subcommand or flag and defers to `repo-contract --help` for the
 command surface, so a pasted copy never pins something that later rots: `--help`
@@ -105,9 +157,10 @@ is generated from the live CLI and cannot go stale.
 
 Re-running `init` later is safe: unchanged files are left alone. If a bundled
 template has moved on and your copy is stale (or you edited it locally), `init`
-writes nothing and exits 1, listing what drifted. Re-run `init --force` to
-overwrite the drifted files in place; since they are committed, `git diff`
-afterwards shows exactly what changed and lets you restore any local edits.
+writes nothing and exits 1, listing what drifted. Only an **installed** scaffold's
+drift blocks that run. Re-run `init --force` to overwrite the drifted files in
+place; since they are committed, `git diff` afterwards shows exactly what changed
+and lets you restore any local edits.
 
 ## Issue quality gate
 
@@ -325,8 +378,10 @@ One `npx github:orestes-dev/repo-contract <command>` binary, four commands. Run
 
 ### `init`
 
-Scaffolds the bundle into a repo (see [Quick start](#quick-start)). `--force`
-upgrades drifted copies in place.
+Installs a selected subset of the three [scaffolds](#scaffolds) into a repo (see
+[Quick start](#quick-start)). `--only <ids>` selects them explicitly, a terminal
+prompts for the ones not yet installed, and `--force` upgrades drifted copies in
+place. `init` only ever adds; removing a scaffold is `uninstall`'s job.
 
 `init` ends with a **Protection** line reporting whether the merge-blocking PR
 gate is actually enforced. Vendoring the workflow makes the check **run**; only a
@@ -463,6 +518,7 @@ queries it directly:
 
 ```json
 {
+  "scaffolds": ["quality-gates", "git-hooks"],
   "overrides": {
     "maxAllowedEmDashes": {
       "value": 34,
@@ -478,6 +534,14 @@ queries it directly:
 
 Keys:
 
+- **`scaffolds`**: the install manifest, written by `init` (see
+  [Scaffolds](#scaffolds)). An authoritative whitelist of what is installed,
+  rewritten on every run; an absent key means none installed. It is a plain list,
+  not reason-bearing: an install manifest is not a bypass of an active rule, so
+  there is nothing to justify. Every id must name a known scaffold and the array
+  is never empty; both are hard errors on every surface that reads the file,
+  because an id read as "not installed" would let a later selection drop a live
+  scaffold without the refusal firing.
 - **`overrides`**: a map from an opt-out key to an `{ "value", "reason" }` object.
   Omit it (or the whole file) for full enforcement. Any other top-level key is
   reserved: the file may grow to hold further package settings.
@@ -576,7 +640,9 @@ Structure and rules both live in `src/rules.js` (the ordered field descriptor pl
 the constraints), read at runtime; the Issue Form YAML is a drift-checked rendering
 of that structure.
 
-`templates/` is the canonical bundle `init` copies into every consumer:
+`templates/` is the canonical bundle `init` copies into a consumer, grouped into
+the three [scaffolds](#scaffolds) by [`src/scaffolds.js`](src/scaffolds.js), which
+maps each one to its files, its labels, and whether it claims `core.hooksPath`:
 `templates/form/task.yml` (the Issue Form), `templates/markdown/issue.md` (the issue
 Author guide), `templates/markdown/pr.md` (the PR Form, written to both the GitHub
 template path and the root PR Author guide), the thin workflows

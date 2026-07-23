@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { goodBody as PASSING_ISSUE_BODY } from "../src/fixtures.js";
+import { SCAFFOLDS } from "../src/scaffolds.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = join(ROOT, "bin", "cli.js");
@@ -278,7 +279,34 @@ test("usage lists the supported commands and drops the removed scaffold command"
   const { status, stderr } = runCli(ROOT, "bogus");
   assert.equal(status, 2);
   assert.match(stderr, /init\|validate-issue\|validate-pr\|sweep/);
-  // "scaffold" survives only as the verb in init's description, never as a
+  // "scaffold" survives only as the noun naming an installable unit, never as a
   // command line of its own.
   assert.doesNotMatch(stderr, /^\s*scaffold\s/m);
+});
+
+// An unknown scaffold id is a malformed request, so it exits 2 like an unknown
+// command, and writes nothing: the selection resolves before anything is touched.
+test("init with an unknown scaffold id exits 2 and lists the known ids", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rc-only-"));
+  try {
+    const { status, stderr } = runCli(dir, "init", "--only", "issue-quality");
+    assert.equal(status, 2);
+    assert.match(stderr, /unknown scaffold 'issue-quality'/);
+    for (const { id } of SCAFFOLDS) assert.ok(stderr.includes(id));
+    assert.ok(!existsSync(join(dir, ".repo-contract.json")));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The vocabulary an operator needs for `--only` is generated from the manifest,
+// so `--help` cannot drift from what `init` actually installs.
+test("usage enumerates the three scaffold ids and the --only flag", () => {
+  const { status, stdout } = runCli(ROOT, "--help");
+  assert.equal(status, 0);
+  assert.match(stdout, /--only <ids>/);
+  for (const { id, summary } of SCAFFOLDS) {
+    assert.ok(stdout.includes(id), `--help omits ${id}`);
+    assert.ok(stdout.includes(summary), `--help omits the summary for ${id}`);
+  }
 });

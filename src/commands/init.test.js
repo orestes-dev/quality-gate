@@ -1,8 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 
-import { ensureGateLabels, reportProtection } from "./init.js";
+import {
+  ensureGateLabels,
+  reportProtection,
+  findOrphans,
+  reportOrphans,
+  HOOKS_PATH,
+} from "./init.js";
 import { labelsFor, filesFor } from "../scaffolds.js";
 import {
   OVERRIDE_LABEL,
@@ -93,6 +103,93 @@ test("the three scaffolds partition the vendored files", () => {
   );
   assert.deepEqual([...all].sort(), [...perScaffold].sort());
   assert.equal(new Set(all).size, all.length, "no file is claimed twice");
+});
+
+// A scratch git repo with a chosen set of scaffold files already on disk, so
+// orphan detection can be exercised against a real filesystem and a real
+// `core.hooksPath`.
+function withRepo(present) {
+  const dir = mkdtempSync(join(tmpdir(), "rc-orphan-"));
+  execFileSync("git", ["init", "-q", dir], { stdio: "ignore" });
+  for (const { to } of filesFor(present)) {
+    const dest = join(dir, to);
+    mkdirSync(dirname(dest), { recursive: true });
+    writeFileSync(dest, "whatever bytes");
+  }
+  return dir;
+}
+
+// An orphan is a scaffold present on disk that the manifest does not record. It
+// is reported and never removed: `init` is additive everywhere else, and
+// deleting live workflows or hooks mid-run is destructive. Teardown is
+// `uninstall`'s job.
+test("findOrphans reports files on disk that the selection does not claim", () => {
+  const dir = withRepo([SCAFFOLD.QUALITY_GATES]);
+  try {
+    const orphans = findOrphans([SCAFFOLD.GIT_HOOKS], dir);
+    assert.equal(orphans.length, 1);
+    assert.equal(orphans[0].id, SCAFFOLD.QUALITY_GATES);
+    assert.equal(
+      orphans[0].files.length,
+      filesFor([SCAFFOLD.QUALITY_GATES]).length,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a selected scaffold's files are never orphans", () => {
+  const dir = withRepo(SCAFFOLD_IDS);
+  try {
+    assert.deepEqual(findOrphans(SCAFFOLD_IDS, dir), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an unselected scaffold that is absent from disk is not an orphan", () => {
+  const dir = withRepo([]);
+  try {
+    assert.deepEqual(findOrphans([SCAFFOLD.GIT_HOOKS], dir), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Detection reaches `core.hooksPath` because the report exists to answer "is this
+// still enforcing?" — orphaned hooks that git is still pointed at fire on every
+// commit, which is exactly the state an operator needs told.
+test("orphaned hooks still pointed at by core.hooksPath report as enforcing", () => {
+  const dir = withRepo([SCAFFOLD.GIT_HOOKS]);
+  try {
+    execFileSync("git", ["-C", dir, "config", "core.hooksPath", HOOKS_PATH], {
+      stdio: "ignore",
+    });
+    const [orphan] = findOrphans([SCAFFOLD.QUALITY_GATES], dir);
+    assert.equal(orphan.id, SCAFFOLD.GIT_HOOKS);
+    assert.equal(orphan.enforcing, true);
+
+    const lines = [];
+    reportOrphans({ orphans: [orphan], log: (l) => lines.push(l) });
+    assert.match(lines[0], /^orphan\s+git-hooks/);
+    assert.match(lines[1], /still points at/);
+    assert.match(lines[1], /repo-contract uninstall git-hooks/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("orphaned hooks that git is not pointed at report as not enforcing", () => {
+  const dir = withRepo([SCAFFOLD.GIT_HOOKS]);
+  try {
+    const [orphan] = findOrphans([SCAFFOLD.QUALITY_GATES], dir);
+    assert.equal(orphan.enforcing, false);
+    const lines = [];
+    reportOrphans({ orphans: [orphan], log: (l) => lines.push(l) });
+    assert.equal(lines.length, 1, "no enforcement warning where none applies");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // A client stub whose ensureLabel returns a scripted per-name verdict, so the
