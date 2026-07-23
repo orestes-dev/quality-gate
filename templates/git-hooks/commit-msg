@@ -6,15 +6,15 @@
 # before `yarn install`.
 #
 # Activation is a separate matter from execution: git runs this file only while
-# core.hooksPath points at .husky. `init` sets exactly that relative value, so a
+# core.hooksPath points at .repo-contract/hooks. `init` sets exactly that relative value, so a
 # checkout that never installed anything is still covered and each linked worktree
 # runs the hooks committed on its own branch. Git execs this file directly, with no
-# husky shim, so it must stay executable; keep the body free of bashisms.
+# shim, so it must stay executable; keep the body free of bashisms.
 #
 # repo-contract owns this file byte-for-byte and drift-checks it: edit
-# templates/husky/commit-msg upstream and re-run `init`, never patch in place.
+# templates/git-hooks/commit-msg upstream and re-run `init`, never patch in place.
 # Opt-outs live in the committed .repo-contract.json (never `git config hooks.*`).
-# Repo-specific commit-msg checks go in .husky/local/commit-msg, chained below.
+# Repo-specific commit-msg checks go in .repo-contract/hooks/local/commit-msg, chained below.
 set -eu
 
 CONFIG=".repo-contract.json"
@@ -88,13 +88,13 @@ if grep -v '^#' "$msg_file" | grep -qF '—'; then
 fi
 
 # Chain to an optional consumer-owned extension for repo-specific commit-msg
-# checks. repo-contract never writes .husky/local/, so it survives `init --force`.
+# checks. repo-contract never writes .repo-contract/hooks/local/, so it survives `init --force`.
 # Tier-3 checks do depend on node_modules, so put the project's binaries on PATH
-# first, the way husky's shim used to.
+# first, since a shim no longer does it.
 PATH="node_modules/.bin:$PATH"
 export PATH
-if [ -r ".husky/local/commit-msg" ]; then
-  sh -e ".husky/local/commit-msg" "$@"
+if [ -r ".repo-contract/hooks/local/commit-msg" ]; then
+  sh -e ".repo-contract/hooks/local/commit-msg" "$@"
 fi
 
 exit 0

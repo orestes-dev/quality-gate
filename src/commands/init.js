@@ -51,7 +51,7 @@ export const GATE_LABELS = [
 
 // `templates/` is the canonical bundle for the Forms, workflows, and repo-contract
 // git hooks; this repo's `.github/` copies, root `.template.*.md` guides, and
-// `.husky/` hooks are a dogfood instance drift-checked to match it (ADR 0003,
+// `.repo-contract/hooks/` are a dogfood instance drift-checked to match it (ADR 0003,
 // ADR 0002). Every destination is a verbatim byte-for-byte copy of its source,
 // which is what makes exact equality a precise drift signal. The canonical
 // Markdown PR Form is `templates/markdown/pr.md`; `init` writes it byte-for-byte
@@ -105,16 +105,17 @@ const TEMPLATES = [
     // node_modules, so it runs before `yarn install` (ADR 0002, ADR 0012). Git
     // executes it directly via `core.hooksPath`, which is why it is written
     // executable.
-    from: join(ROOT, "templates", "husky", "commit-msg"),
-    to: join(".husky", "commit-msg"),
+    from: join(ROOT, "templates", "git-hooks", "commit-msg"),
+    to: join(".repo-contract", "hooks", "commit-msg"),
     exec: true,
   },
   {
     // Repo-contract pre-commit hook (no default-branch commits, em-dash policy
     // in staged Markdown). Same vendoring rationale as commit-msg. Repo-specific
-    // checks belong in .husky/local/pre-commit, which `init` never writes.
-    from: join(ROOT, "templates", "husky", "pre-commit"),
-    to: join(".husky", "pre-commit"),
+    // checks belong in .repo-contract/hooks/local/pre-commit, which `init` never
+    // writes.
+    from: join(ROOT, "templates", "git-hooks", "pre-commit"),
+    to: join(".repo-contract", "hooks", "pre-commit"),
     exec: true,
   },
 ];
@@ -137,11 +138,16 @@ const DRIFT = "drift";
 // each worktree runs the hooks committed on its own branch (githooks(5): git
 // chdirs to the worktree root before invoking a hook).
 //
-// `.husky` (not husky's generated `.husky/_` shim) is the target: the vendored
-// hooks are executable POSIX sh, so git can exec them directly with no shim, no
-// `node_modules`, and no install step. The directory keeps its conventional
-// name; husky itself is no longer required to activate them.
-export const HOOKS_PATH = ".husky";
+// The target is `.repo-contract/hooks`: the vendored hooks are executable POSIX
+// sh, so git can exec them directly with no shim, no `node_modules`, and no
+// install step. The directory is namespaced under `.repo-contract/` rather than
+// named `.husky` or `.githooks` because a vendoring tool must not claim a name a
+// consumer may already own for its own hooks (ADR 0017).
+//
+// A literal, not a `join()`: this is a git config value, not a filesystem path,
+// and it must match the forward-slash form the `prepare` script and the docs
+// tell a consumer to set by hand.
+export const HOOKS_PATH = ".repo-contract/hooks";
 
 // Git skips a hook that is not executable, emitting only a hint. Vendored hooks
 // are written 0755 so activation cannot fail that quietly.
@@ -211,9 +217,10 @@ function readHooksPath(cwd) {
 
 /**
  * Point `core.hooksPath` at the vendored hook directory, so the files `init`
- * just wrote actually run (ADR 0012). Sets the relative `.husky`, and repairs
- * any other value, including husky's `.husky/_` shim and any absolute path that
- * would make every linked worktree run one fixed checkout's hooks.
+ * just wrote actually run (ADR 0012, ADR 0017). Sets the relative
+ * `.repo-contract/hooks`, and repairs any other value, including a legacy
+ * `.husky`/`.husky/_` and any absolute path that would make every linked
+ * worktree run one fixed checkout's hooks.
  *
  * Reports the outcome as one line, the way the file and label loops do. Outside
  * a git repository there is nothing to configure: say so loudly (the hooks are
@@ -392,8 +399,8 @@ export async function reportProtection({ client, log, cwd = process.cwd() }) {
  * Suggested rule is printed on success and written to no file.
  *
  * After the files, activate them: each vendored hook is written executable and
- * `core.hooksPath` is set to the relative `.husky`, repairing any other value
- * (ADR 0012). That is what makes a checkout which never ran a package-manager
+ * `core.hooksPath` is set to the relative `.repo-contract/hooks`, repairing any
+ * other value (ADR 0012, ADR 0017). That is what makes a checkout which never ran a package-manager
  * install enforce the baseline, and what keeps a linked worktree on the hooks
  * committed to its own branch.
  *

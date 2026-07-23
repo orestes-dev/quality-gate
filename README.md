@@ -33,7 +33,7 @@ core (`src/rules.js`).
   is why the hooks re-implement the Conventional-Commits check in sh rather than
   reusing a library the CI gate can (ADR
   [0015](docs/adr/0015-commit-hooks-keep-the-sh-jq-dependency-budget.md)). `init`
-  activates them in the checkout it runs in; no husky and no install required.
+  activates them in the checkout it runs in; no shim and no install required.
 
 A red check only _blocks_ once its context is a required status check on the
 default branch. That is a repository setting no repo can commit, so `init` cannot
@@ -80,7 +80,8 @@ This drops seven files, which together are the opt-in:
   at `@main` for the commit-hygiene gate (merge-blocking). No Form or Author guide:
   it reads the PR's commits and diff, not a body the author fills in.
 
-Commit all seven. `init` also vendors two [git hooks](#git-hooks) under `.husky/`
+Commit all seven. `init` also vendors two [git hooks](#git-hooks) under
+`.repo-contract/hooks/`
 and activates them in this checkout by setting `core.hooksPath`.
 
 `init` then creates the fixed label schema in the repo: the three gate triples
@@ -506,9 +507,9 @@ relaxations are identical on a developer's machine and in CI.
 every consumer must obey, including CI and contributors with no `~/.dotfiles`
 (ADR 0002, orestes/dotfiles#52):
 
-- **`.husky/commit-msg`**: the subject matches Conventional Commits, and the message
+- **`.repo-contract/hooks/commit-msg`**: the subject matches Conventional Commits, and the message
   carries no em-dash. Opt-outs: `skipConventionalCommits`, `allowEmDashes`.
-- **`.husky/pre-commit`**: no commit lands on the default branch, and staged
+- **`.repo-contract/hooks/pre-commit`**: no commit lands on the default branch, and staged
   `*.md`/`*.mdx` carry no em-dash beyond `maxAllowedEmDashes`. Opt-outs:
   `allowDefaultBranchCommits`, `maxAllowedEmDashes` (a budget).
 
@@ -537,9 +538,9 @@ the committed `.repo-contract.json` via `jq` and quotes the triggered opt-out's
 
 Git runs a hook only when `core.hooksPath` points at it, and that setting is
 per-clone git config which no repository can commit. So `init` sets it: it writes
-both hooks executable and points `core.hooksPath` at `.husky`, reporting the step
-as `create`, `repair`, or `ok`. Git then executes the committed files directly,
-with no husky shim, no `node_modules`, and no package-manager install. Where a
+both hooks executable and points `core.hooksPath` at `.repo-contract/hooks`,
+reporting the step as `create`, `repair`, or `ok`. Git then executes the committed
+files directly, with no shim, no `node_modules`, and no package-manager install. Where a
 repository exists and the setting cannot be written, `init` exits non-zero and
 says the baseline is not enforced; hooks that quietly do nothing are the failure
 this replaces (ADR 0012).
@@ -547,26 +548,27 @@ this replaces (ADR 0012).
 The value is deliberately relative. `core.hooksPath` lives in the shared
 `.git/config` that every linked worktree reads, so an absolute path pins them all
 to one fixed checkout's hooks, and a worktree on another branch runs rules it
-never committed. `.husky` resolves against each worktree's own root instead, so
+never committed. `.repo-contract/hooks` resolves against each worktree's own root instead, so
 every worktree runs its own branch's hooks. `init` rewrites an absolute value it
-finds, and moves husky's generated `.husky/_` shim path onto `.husky` as well.
+finds, and moves a legacy `.husky` or `.husky/_` path onto the new one as well.
 
 Run `init` once per clone. A checkout where nobody ran it has the hook files on
 disk and no local enforcement, which nothing local can detect; the
 [commit-hygiene gate](#commit-hygiene-gate) is the un-bypassable copy of the same
 rules in CI. To activate without the CLI:
-`git config core.hooksPath .husky`.
+`git config core.hooksPath .repo-contract/hooks`.
 
 repo-contract owns both files byte-for-byte and drift-checks them with the same
 `init`/`--force` machinery as the Forms and workflows: a tampered or stale hook is
 reported `stale` on a plain `init` and repaired in place by `init --force`. Edit the
-canonical `templates/husky/*` upstream and re-run `init`; never patch a dropped copy
+canonical `templates/git-hooks/*` upstream and re-run `init`; never patch a dropped copy
 in place, or the next `init` flags it as drift.
 
 Repo-specific checks (lint-staged, gitleaks, build) are tier-3 project checks, not
-this hook's concern. Put them in `.husky/local/commit-msg` or
-`.husky/local/pre-commit`; the shipped hooks chain to those if present, and `init`
-never writes under `.husky/local/`, so they survive `init --force`.
+this hook's concern. Put them in `.repo-contract/hooks/local/commit-msg`
+or `.repo-contract/hooks/local/pre-commit`; the shipped hooks chain to those if
+present, and `init` never writes under `.repo-contract/hooks/local/`, so they
+survive `init --force`.
 
 ## How it fits together
 
@@ -580,10 +582,10 @@ Author guide), `templates/markdown/pr.md` (the PR Form, written to both the GitH
 template path and the root PR Author guide), the thin workflows
 `templates/workflow/issue-quality.yml`, `pr-readiness.yml`, and `commit-hygiene.yml`
 (each emitting its own gate namespace: `issue-quality:*`, `pr-readiness:*`, and
-`commit-hygiene:*`), and `templates/husky/{commit-msg,pre-commit}` (the git hooks).
+`commit-hygiene:*`), and `templates/git-hooks/{commit-msg,pre-commit}` (the git hooks).
 
 This repo's own `.github/`, root `.template.{issue,pr}.md`, and
-`.husky/{commit-msg,pre-commit}` are a dogfood instance of that bundle: the applied
+`.repo-contract/hooks/{commit-msg,pre-commit}` are a dogfood instance of that bundle: the applied
 Forms, Author guides, and hooks are drift-tested byte-identical to the canonical
 ones, and each dogfood workflow is drift-tested to agree with its consumer template
 on every shared field (they differ only on `uses: ./` vs `@main`).

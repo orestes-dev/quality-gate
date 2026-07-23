@@ -16,7 +16,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "git config core.hooksPath .husky || true"
+    "prepare": "git config core.hooksPath .repo-contract/hooks || true"
   },
   "license": "AGPL-3.0-or-later",
   "devDependencies": {

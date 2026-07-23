@@ -6,15 +6,15 @@
 # before `yarn install`.
 #
 # Activation is a separate matter from execution: git runs this file only while
-# core.hooksPath points at .husky. `init` sets exactly that relative value, so a
+# core.hooksPath points at .repo-contract/hooks. `init` sets exactly that relative value, so a
 # checkout that never installed anything is still covered and each linked worktree
 # runs the hooks committed on its own branch. Git execs this file directly, with no
-# husky shim, so it must stay executable; keep the body free of bashisms.
+# shim, so it must stay executable; keep the body free of bashisms.
 #
 # repo-contract owns this file byte-for-byte and drift-checks it: edit
-# templates/husky/pre-commit upstream and re-run `init`, never patch in place.
+# templates/git-hooks/pre-commit upstream and re-run `init`, never patch in place.
 # Opt-outs live in the committed .repo-contract.json (never `git config hooks.*`).
-# Repo-specific checks (lint-staged, gitleaks, build) go in .husky/local/pre-commit,
+# Repo-specific checks (lint-staged, gitleaks, build) go in .repo-contract/hooks/local/pre-commit,
 # chained below. They are tier-3 project checks and are not this hook's concern.
 set -eu
 
@@ -92,13 +92,13 @@ if [ -n "$staged_md" ]; then
 fi
 
 # Chain to an optional consumer-owned extension for repo-specific checks.
-# repo-contract never writes .husky/local/, so it survives `init --force`.
+# repo-contract never writes .repo-contract/hooks/local/, so it survives `init --force`.
 # Tier-3 checks do depend on node_modules (lint-staged, gitleaks), so put the
-# project's binaries on PATH first, the way husky's shim used to.
+# project's binaries on PATH first, since a shim no longer does it.
 PATH="node_modules/.bin:$PATH"
 export PATH
-if [ -r ".husky/local/pre-commit" ]; then
-  sh -e ".husky/local/pre-commit" "$@"
+if [ -r ".repo-contract/hooks/local/pre-commit" ]; then
+  sh -e ".repo-contract/hooks/local/pre-commit" "$@"
 fi
 
 exit 0

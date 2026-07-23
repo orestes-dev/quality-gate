@@ -1,11 +1,13 @@
 // Tests for the vendored repo-contract git hooks shipped by `init`
-// (templates/husky/*). Three concerns:
-//   1. Drift: this repo's own `.husky/` copies stay byte-identical to the
-//      canonical `templates/husky/` bundle, and `init` drops + repairs them.
+// (templates/git-hooks/*). Three concerns:
+//   1. Drift: this repo's own `.repo-contract/hooks/` copies stay
+//      byte-identical to the canonical `templates/git-hooks/` bundle, and
+//      `init` drops + repairs them.
 //   2. Behavior: the shipped hooks block a bad commit and honor a
 //      `.repo-contract.json` opt-out, quoting its reason (ADR 0002).
-//   3. Activation: `init` points `core.hooksPath` at the relative `.husky` and
-//      writes the hooks executable, so a checkout that never ran an install
+//   3. Activation: `init` points `core.hooksPath` at the relative
+//      `.repo-contract/hooks` and writes the hooks executable, so a checkout
+//      that never ran an install
 //      enforces the baseline and a linked worktree runs its own committed hooks
 //      (ADR 0012). Those two are exercised through a real `git commit`, since a
 //      hook git never invokes is exactly the failure being regression-tested.
@@ -69,12 +71,16 @@ function withGitRepo(fn) {
   });
 }
 
-// Run a shipped hook the way husky does: `sh -e <hook> [args]` with cwd at the repo.
+// Run a shipped hook the way git does: `sh -e <hook> [args]` with cwd at the repo.
 function runHook(dir, name, ...args) {
-  return spawnSync("sh", ["-e", join(dir, ".husky", name), ...args], {
-    cwd: dir,
-    encoding: "utf8",
-  });
+  return spawnSync(
+    "sh",
+    ["-e", join(dir, ".repo-contract", "hooks", name), ...args],
+    {
+      cwd: dir,
+      encoding: "utf8",
+    },
+  );
 }
 
 function initInto(dir, ...args) {
@@ -85,16 +91,17 @@ function initInto(dir, ...args) {
   });
 }
 
-// --- drift: the dogfood .husky hooks are byte-identical to the bundle ---
+// --- drift: the dogfood .repo-contract/hooks are byte-identical to the bundle ---
 
-// `init` writes each canonical hook to `.husky/<name>` verbatim; this repo's own
-// copies are its dogfood instance, so each must stay byte-identical to the bundle
+// `init` writes each canonical hook to `.repo-contract/hooks/<name>` verbatim;
+// this repo's own copies are its dogfood instance, so each must stay
+// byte-identical to the bundle
 // or the hooks a consumer gets drift from the ones this repo runs (ADR 0002/0003).
 for (const name of HOOK_NAMES) {
-  test(`the dogfood .husky/${name} is byte-identical to the templates bundle`, () => {
+  test(`the dogfood .repo-contract/hooks/${name} is byte-identical to the templates bundle`, () => {
     assert.equal(
-      read(join(".husky", name)),
-      read(join("templates", "husky", name)),
+      read(join(".repo-contract", "hooks", name)),
+      read(join("templates", "git-hooks", name)),
     );
   });
 }
@@ -106,11 +113,11 @@ test("init drops both repo-contract hooks into a fresh repo", () => {
     const { status } = initInto(dir);
     assert.equal(status, 0);
     for (const name of HOOK_NAMES) {
-      const dest = join(dir, ".husky", name);
+      const dest = join(dir, ".repo-contract", "hooks", name);
       assert.ok(existsSync(dest), `${name} was not created`);
       assert.equal(
         readFileSync(dest, "utf8"),
-        read(join("templates", "husky", name)),
+        read(join("templates", "git-hooks", name)),
       );
     }
   });
@@ -119,15 +126,18 @@ test("init drops both repo-contract hooks into a fresh repo", () => {
 test("init reports a tampered hook as stale and --force repairs it", () => {
   withTempDir((dir) => {
     initInto(dir);
-    const dest = join(dir, ".husky", "pre-commit");
+    const dest = join(dir, ".repo-contract", "hooks", "pre-commit");
     const canonical = readFileSync(dest, "utf8");
     writeFileSync(dest, "#!/usr/bin/env sh\nexit 0\n");
     const plain = initInto(dir);
     assert.equal(plain.status, 1);
-    assert.match(plain.stdout, /stale\s+.*\.husky\/pre-commit/);
+    assert.match(plain.stdout, /stale\s+.*\.repo-contract\/hooks\/pre-commit/);
     const forced = initInto(dir, "--force");
     assert.equal(forced.status, 0);
-    assert.match(forced.stdout, /update\s+.*\.husky\/pre-commit/);
+    assert.match(
+      forced.stdout,
+      /update\s+.*\.repo-contract\/hooks\/pre-commit/,
+    );
     assert.equal(readFileSync(dest, "utf8"), canonical);
   });
 });
@@ -275,8 +285,8 @@ function commitAttempt(dir, message, file = "a.txt") {
 }
 
 for (const name of HOOK_NAMES) {
-  test(`the dogfood .husky/${name} is executable`, () => {
-    assert.ok(isExecutable(join(ROOT, ".husky", name)));
+  test(`the dogfood .repo-contract/hooks/${name} is executable`, () => {
+    assert.ok(isExecutable(join(ROOT, ".repo-contract", "hooks", name)));
   });
 }
 
@@ -284,22 +294,28 @@ test("init sets core.hooksPath to the relative hook directory", () => {
   withGitRepo((dir) => {
     const { status, stdout } = initInto(dir);
     assert.equal(status, 0);
-    assert.match(stdout, /create {3}core\.hooksPath=\.husky/);
-    assert.equal(hooksPathOf(dir), ".husky");
+    assert.match(stdout, /create {3}core\.hooksPath=\.repo-contract\/hooks/);
+    assert.equal(hooksPathOf(dir), ".repo-contract/hooks");
     for (const name of HOOK_NAMES) {
-      assert.ok(isExecutable(join(dir, ".husky", name)), `${name} not +x`);
+      assert.ok(
+        isExecutable(join(dir, ".repo-contract", "hooks", name)),
+        `${name} not +x`,
+      );
     }
   });
 });
 
 test("init repairs an absolute core.hooksPath into a relative one", () => {
   withGitRepo((dir, git) => {
-    git("config", "core.hooksPath", join(dir, ".husky", "_"));
+    git("config", "core.hooksPath", join(dir, ".repo-contract", "hooks"));
     const { status, stdout } = initInto(dir);
     assert.equal(status, 0);
-    assert.match(stdout, /repair\s+core\.hooksPath=\.husky \(was '\//);
+    assert.match(
+      stdout,
+      /repair\s+core\.hooksPath=\.repo-contract\/hooks \(was '\//,
+    );
     assert.match(stdout, /absolute/);
-    assert.equal(hooksPathOf(dir), ".husky");
+    assert.equal(hooksPathOf(dir), ".repo-contract/hooks");
   });
 });
 
@@ -308,7 +324,7 @@ test("init reports activation skipped outside a git repository", () => {
     const { status, stdout } = initInto(dir);
     assert.equal(status, 0);
     assert.match(stdout, /skip\s+core\.hooksPath \(no git repository here\)/);
-    assert.match(stdout, /git config core\.hooksPath \.husky/);
+    assert.match(stdout, /git config core\.hooksPath \.repo-contract\/hooks/);
     // The closing summary reports what happened, never a live-hooks claim the
     // run did not earn.
     assert.match(stdout, /The git hooks are NOT active/);
@@ -317,13 +333,16 @@ test("init reports activation skipped outside a git repository", () => {
 });
 
 // Regression (issue #79): a checkout that never ran a package-manager install
-// has no husky shim and no node_modules. Before activation moved into `init`,
-// git found nothing to run and the commit landed with enforcement silently
-// absent. It must now be blocked.
+// has no generated shim and no node_modules. Before activation moved into
+// `init`, git found nothing to run and the commit landed with enforcement
+// silently absent. It must now be blocked.
 test("a shim-less, never-installed checkout does not commit unenforced", () => {
   withGitRepo((dir, git) => {
     initInto(dir);
-    assert.ok(!existsSync(join(dir, ".husky", "_")), "a husky shim exists");
+    assert.ok(
+      !existsSync(join(dir, ".repo-contract", "hooks", "_")),
+      "a generated shim exists",
+    );
     assert.ok(!existsSync(join(dir, "node_modules")), "node_modules exists");
 
     const onDefault = commitAttempt(dir, "feat(x): land on main");
@@ -342,7 +361,7 @@ test("a shim-less, never-installed checkout does not commit unenforced", () => {
 
 // Regression (issue #79): `core.hooksPath` lives in the shared `.git/config`,
 // so an absolute value pins every linked worktree to one fixed checkout's hooks.
-// With the relative value each worktree resolves `.husky` under its own root and
+// With the relative value each worktree resolves `.repo-contract/hooks` under its own root and
 // runs the hooks committed on its own branch.
 test("a linked worktree runs its own committed hooks, not the main checkout's", () => {
   withGitRepo((dir, git) => {
@@ -357,13 +376,13 @@ test("a linked worktree runs its own committed hooks, not the main checkout's", 
     // Replace the worktree branch's pre-commit with a marker that always fails.
     // Staging it needs --no-verify precisely because the hook it installs is the
     // one under test; this is fixture setup, not a sanctioned bypass.
-    const marker = join(wt, ".husky", "pre-commit");
+    const marker = join(wt, ".repo-contract", "hooks", "pre-commit");
     writeFileSync(
       marker,
       "#!/usr/bin/env sh\necho WORKTREE_HOOK >&2\nexit 1\n",
     );
     chmodSync(marker, 0o755);
-    gitIn(wt, "add", ".husky/pre-commit");
+    gitIn(wt, "add", ".repo-contract/hooks/pre-commit");
     gitIn(wt, "commit", "--no-verify", "-m", "chore: worktree marker hook");
 
     const inWorktree = commitAttempt(wt, "feat(x): from the worktree");
@@ -378,13 +397,15 @@ test("a linked worktree runs its own committed hooks, not the main checkout's", 
   });
 });
 
-test("pre-commit chains to an optional .husky/local extension", () => {
+test("pre-commit chains to an optional .repo-contract/hooks/local extension", () => {
   withGitRepo((dir, git) => {
     initInto(dir);
     git("switch", "-c", "feat/x");
-    mkdirSync(join(dir, ".husky", "local"), { recursive: true });
+    mkdirSync(join(dir, ".repo-contract", "hooks", "local"), {
+      recursive: true,
+    });
     writeFileSync(
-      join(dir, ".husky", "local", "pre-commit"),
+      join(dir, ".repo-contract", "hooks", "local", "pre-commit"),
       "echo LOCAL_RAN\nexit 0\n",
     );
     writeFileSync(join(dir, "a.txt"), "x\n");

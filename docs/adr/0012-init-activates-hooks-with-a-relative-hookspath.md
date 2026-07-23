@@ -1,5 +1,11 @@
 # `init` activates the vendored hooks with a relative `core.hooksPath`
 
+> **Superseded in part by [ADR 0017](0017-vendored-hooks-move-to-repo-contract-hooks.md).**
+> The hook directory is now `.repo-contract/hooks`, not `.husky`, and the bundle
+> is `templates/git-hooks/`. Every `.husky` path below reads as its
+> `.repo-contract/hooks` equivalent. The decision itself, that `init` performs
+> activation and the `core.hooksPath` value is relative, stands unchanged.
+
 Vendoring a hook file guarantees only that it _can_ run. Git runs it only when
 `core.hooksPath` points at the directory holding it and the file is executable.
 Until now `init` wrote `.husky/commit-msg` and `.husky/pre-commit` and stopped

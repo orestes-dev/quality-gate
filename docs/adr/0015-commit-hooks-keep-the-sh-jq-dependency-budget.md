@@ -9,7 +9,7 @@ when and where it runs. We decided the hooks keep the strictest budget (POSIX
 Conventional-Commits library (commitlint, `conventional-commits-parser`) happens
 only on the looser gate and CLI surfaces, which already run node with an install
 step behind them. The commit rules are therefore expressed twice (inline sh+grep
-in `templates/husky/commit-msg`, and library/JS on the node surfaces), and the two
+in `templates/git-hooks/commit-msg`, and library/JS on the node surfaces), and the two
 copies are drift-checked, not collapsed.
 
 The forcing reason is the hook's runtime moment, not taste. The hook runs at
