@@ -73,34 +73,32 @@ export function parseTargets(argv) {
 }
 
 /**
- * Remove one scaffold's on-disk files, reporting per file and returning what it
- * did so the caller can decide the manifest and no-op messaging. Files the
- * scaffold declares but that are absent are skipped: an orphan (some files
- * present, manifest silent) and a partial install both resolve to "remove what
- * is there".
+ * Remove one scaffold's on-disk files, reporting per file. Files the scaffold
+ * declares but that are absent are skipped: an orphan (some files present,
+ * manifest silent) and a partial install both resolve to "remove what is there".
+ *
+ * Only ever called for a scaffold the no-op filter already kept (recorded, on
+ * disk, or actively enforcing), so reaching here with nothing on disk always
+ * means "touched, but its files are already gone" — git-hooks whose footprint is
+ * the activation, or a recorded scaffold a hand deleted — and gets a line so the
+ * `Files:` section is never silently empty for a scaffold it names.
  * @param {string} id
- * @param {boolean} recorded - Whether the manifest lists this scaffold.
  * @param {string} cwd
  * @param {(line: string) => void} log
- * @returns {{removed: number}}
+ * @returns {void}
  */
-function removeScaffoldFiles(id, recorded, cwd, log) {
-  const { files } = scaffold(id);
-  const present = files
-    .map((f) => f.to)
+function removeScaffoldFiles(id, cwd, log) {
+  const present = scaffold(id)
+    .files.map((f) => f.to)
     .filter((to) => existsSync(resolve(cwd, to)));
 
   for (const to of present) {
     rmSync(resolve(cwd, to));
     log(`remove   ${to}`);
   }
-  // A scaffold with no files (git-hooks vendors none on the remote side; its
-  // footprint is the hooks, handled in Activation) still counts as touched when
-  // it was recorded, so the manifest rewrite below fires.
-  if (present.length === 0 && (recorded || files.length === 0)) {
+  if (present.length === 0) {
     log(`ok       ${id}: no files on disk to remove`);
   }
-  return { removed: present.length };
 }
 
 /**
@@ -153,9 +151,7 @@ export async function uninstall(argv = []) {
       );
       continue;
     }
-    removeScaffoldFiles(id, recorded.includes(id), cwd, (line) =>
-      console.log(line),
-    );
+    removeScaffoldFiles(id, cwd, (line) => console.log(line));
   }
 
   if (ids.includes(SCAFFOLD.GIT_HOOKS)) {

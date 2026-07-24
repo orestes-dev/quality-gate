@@ -167,6 +167,24 @@ test("uninstalling a scaffold that is not installed is a no-op that says so", ()
   }
 });
 
+// A recorded scaffold whose files were removed by hand is still touched: the
+// manifest entry goes, and the `Files:` section names it rather than printing an
+// empty heading.
+test("uninstall reports a recorded scaffold whose files are already gone", () => {
+  const dir = withInstalled([SCAFFOLD.QUALITY_GATES, SCAFFOLD.GIT_HOOKS]);
+  try {
+    for (const { to } of filesFor([SCAFFOLD.QUALITY_GATES])) {
+      rmSync(join(dir, to));
+    }
+    const res = runUninstall(dir, SCAFFOLD.QUALITY_GATES);
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /quality-gates: no files on disk to remove/);
+    assert.deepEqual(readManifest(dir), [SCAFFOLD.GIT_HOOKS]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // An orphan (files on disk the manifest never recorded) is removable by naming
 // its scaffold, which is the resolution `findOrphans` reports has none without
 // this command. Built by installing both, then rewriting the manifest to record
