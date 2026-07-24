@@ -38,7 +38,8 @@ them), and it already prints a per-file, per-label reconciliation report. Detect
 enforcement is one more read on that same session, so `init` gains a final
 **Protection** line: it reads the default branch's required contexts from **both**
 mechanisms GitHub offers (classic branch protection and rulesets, which compose)
-and reports whether the merge-blocking gate's `pr-readiness` context is among them.
+and reports whether the merge-blocking gate's `pr-readiness` context is among them
+(widened to every hard-failing gate's context by the amendment below).
 
 The read distinguishes five cases, because the ways this can be wrong are not
 interchangeable:
@@ -50,6 +51,11 @@ interchangeable:
 | `unprotected`   | the branch has no protection or ruleset at all      | warn     |
 | `not-installed` | no `pr-readiness*.yml` vendored; nothing to require | ok       |
 | `unreadable`    | a 403 hid the answer                                | ok       |
+
+The five cases survive the amendment below, which evaluates them **once per
+context** rather than once per run: read `not-installed` as "no workflow vendored
+for _this_ context", and `unprotected` / `unreadable` as facts about the branch that
+every context shares.
 
 `unreadable` earns its place: reading branch protection needs admin scope, so
 collapsing a 403 into `not-required` would tell every contributor without it that
