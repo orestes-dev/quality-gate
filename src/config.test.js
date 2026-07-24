@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  rmSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -10,8 +16,14 @@ import {
   getOverride,
   formatOverride,
   writeScaffolds,
+  removeScaffoldsKey,
 } from "./config.js";
-import { CONFIG_FILENAME, SCAFFOLD, SCAFFOLD_IDS } from "./constants.js";
+import {
+  CONFIG_FILENAME,
+  SCAFFOLD,
+  SCAFFOLD_IDS,
+  SCAFFOLDS_KEY,
+} from "./constants.js";
 
 // A scratch repo root with an optional `.repo-contract.json`, auto-cleaned.
 function withRepo(contents) {
@@ -246,6 +258,56 @@ test("writeScaffolds refuses an empty selection rather than writing []", () => {
     assert.throws(() => writeScaffolds([], dir), /Refusing to write an empty/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// "Nothing installed" has one representation, the absent key. Removing the last
+// scaffold deletes the key rather than writing `[]`, which parseConfig rejects.
+test("removeScaffoldsKey deletes the key and preserves other keys", () => {
+  const dir = withRepo(
+    JSON.stringify({
+      overrides: { allowEmDashes: { value: true, reason: "docs" } },
+      [SCAFFOLDS_KEY]: [SCAFFOLD.GIT_HOOKS],
+    }),
+  );
+  try {
+    removeScaffoldsKey(dir);
+    const data = JSON.parse(readFileSync(join(dir, CONFIG_FILENAME), "utf8"));
+    assert.ok(!(SCAFFOLDS_KEY in data), "the scaffolds key is gone");
+    assert.deepEqual(data.overrides, {
+      allowEmDashes: { value: true, reason: "docs" },
+    });
+    // Loads back as the same empty manifest an absent key produces.
+    assert.deepEqual(loadConfig(dir).scaffolds, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Removing an orphan the manifest never recorded must not create or churn the
+// file: an absent file and an already-absent key are both no-ops.
+test("removeScaffoldsKey is a no-op when the file or key is absent", () => {
+  const noFile = withRepo(undefined);
+  try {
+    removeScaffoldsKey(noFile);
+    assert.ok(!existsSync(join(noFile, CONFIG_FILENAME)), "no file is created");
+  } finally {
+    rmSync(noFile, { recursive: true, force: true });
+  }
+
+  const onlyOverrides = JSON.stringify({
+    overrides: { allowEmDashes: { value: true, reason: "docs" } },
+  });
+  const noKey = withRepo(onlyOverrides);
+  try {
+    removeScaffoldsKey(noKey);
+    assert.equal(
+      readFileSync(join(noKey, CONFIG_FILENAME), "utf8"),
+      onlyOverrides,
+      "the file is left byte-for-byte untouched",
+    );
+  } finally {
+    rmSync(noKey, { recursive: true, force: true });
   }
 });
 

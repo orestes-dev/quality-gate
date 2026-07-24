@@ -207,7 +207,7 @@ test("validate is no longer a command and hits the usage-error path", () => {
     assert.equal(status, 2);
     assert.match(
       stderr,
-      /usage: repo-contract <init\|validate-issue\|validate-pr\|sweep>/,
+      /usage: repo-contract <init\|uninstall\|validate-issue\|validate-pr\|sweep>/,
     );
   });
 });
@@ -259,7 +259,7 @@ test("help prints usage to stdout and exits 0", () => {
     assert.equal(status, 0, `${arg} should exit 0`);
     assert.match(
       stdout,
-      /usage: repo-contract <init\|validate-issue\|validate-pr\|sweep>/,
+      /usage: repo-contract <init\|uninstall\|validate-issue\|validate-pr\|sweep>/,
     );
     assert.equal(stderr, "");
   }
@@ -270,7 +270,7 @@ test("an unknown command prints usage to stderr and exits 2", () => {
   assert.equal(status, 2);
   assert.match(
     stderr,
-    /usage: repo-contract <init\|validate-issue\|validate-pr\|sweep>/,
+    /usage: repo-contract <init\|uninstall\|validate-issue\|validate-pr\|sweep>/,
   );
   assert.equal(stdout, "");
 });
@@ -278,7 +278,7 @@ test("an unknown command prints usage to stderr and exits 2", () => {
 test("usage lists the supported commands and drops the removed scaffold command", () => {
   const { status, stderr } = runCli(ROOT, "bogus");
   assert.equal(status, 2);
-  assert.match(stderr, /init\|validate-issue\|validate-pr\|sweep/);
+  assert.match(stderr, /init\|uninstall\|validate-issue\|validate-pr\|sweep/);
   // "scaffold" survives only as the noun naming an installable unit, never as a
   // command line of its own.
   assert.doesNotMatch(stderr, /^\s*scaffold\s/m);

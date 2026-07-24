@@ -382,7 +382,7 @@ and needs `permissions: pull-requests: write` and `contents: read`.
 
 ## The CLI
 
-One `npx github:orestes-dev/repo-contract <command>` binary, four commands. Run
+One `npx github:orestes-dev/repo-contract <command>` binary, five commands. Run
 `npx github:orestes-dev/repo-contract --help` for the live surface.
 
 ### `init`
@@ -414,6 +414,34 @@ affects `init`'s exit code, and never configures protection: requiring a check
 that is currently red blocks every open PR at once, so it stays a deliberate human
 act. Do it once the gate is green on the PRs you care about, by adding
 `pr-readiness` to the default branch's required status checks.
+
+### `uninstall`
+
+The single home for deselection, the teardown counterpart to `init`'s
+install-only stance (ADR 0016). `init` refuses a selection that would drop an
+installed scaffold and points here; `uninstall <ids>` removes exactly the named
+[scaffolds](#scaffolds) and nothing adjacent, reading the same per-scaffold
+manifest `init` installs from. Ids are positional, space- or comma-separated.
+
+It is deliberately conservative, the mirror of `init`'s assertiveness:
+
+- **Files.** Only the files the named scaffolds vendor are deleted. This is also
+  the one tool that resolves an **orphan** (files on disk the manifest never
+  recorded): name its scaffold and the files go.
+- **Manifest.** The `scaffolds` key is rewritten to what remains; removing the
+  last scaffold deletes the key entirely, since "nothing installed" has one
+  representation (the absent key), never `[]`.
+- **Hooks.** Uninstalling `git-hooks` unsets this repo's local `core.hooksPath`
+  only when it still holds the managed `.repo-contract/hooks` value, handing
+  activation back to any global tier-1 hooks. `uninstall` releases only the value
+  it set: anything else here (an operator's own directory, or a leftover from a
+  prior install) is not its to delete, so it is left alone and reported.
+- **Remote labels are never deleted.** They are applied to live issues and PRs,
+  so `uninstall` names them as manual cleanup (`gh label delete <name>`) rather
+  than removing them.
+
+Uninstalling a scaffold that is neither recorded nor on disk is a no-op that says
+so, not an error. An unknown id exits 2 and lists the known ones.
 
 ### `validate-issue` and `validate-pr`
 

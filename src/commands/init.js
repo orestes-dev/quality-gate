@@ -19,7 +19,7 @@ import {
   chmodSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { GitHub } from "../github.js";
 import { checkProtection, isDrift } from "../protection.js";
@@ -28,6 +28,11 @@ import { filesFor, labelsFor, scaffold, selected } from "../scaffolds.js";
 import { loadConfig, writeScaffolds } from "../config.js";
 import { resolveSelection } from "../selection.js";
 import { canPrompt, promptForScaffolds } from "../prompt.js";
+import {
+  HOOKS_PATH,
+  readHooksPath,
+  ensureHooksPath,
+} from "../hook-activation.js";
 
 // A destination is `absent`, byte-identical (`ok`), or `drift` (stale upstream
 // or locally customized — indistinguishable without a version marker we don't
@@ -36,30 +41,10 @@ const ABSENT = "absent";
 const OK = "ok";
 const DRIFT = "drift";
 
-// Activation (ADR 0012). Vendoring a hook file only guarantees it can *run*;
-// git runs it only once `core.hooksPath` points at the directory holding it.
-// `init` sets that itself so a checkout that never ran a package-manager install
-// (fresh clone, linked worktree, container) still enforces the baseline.
-//
-// The value is deliberately RELATIVE. `core.hooksPath` lives in the shared
-// `.git/config`, so an absolute path pins every linked worktree to one fixed
-// checkout's hooks; git resolves a relative one against the worktree root, so
-// each worktree runs the hooks committed on its own branch (githooks(5): git
-// chdirs to the worktree root before invoking a hook).
-//
-// The target is `.repo-contract/hooks`: the vendored hooks are executable POSIX
-// sh, so git can exec them directly with no shim, no `node_modules`, and no
-// install step. The directory is namespaced under `.repo-contract/` rather than
-// named `.husky` or `.githooks` because a vendoring tool must not claim a name a
-// consumer may already own for its own hooks (ADR 0017).
-//
-// A literal, not a `join()`: this is a git config value, not a filesystem path,
-// and it must match the forward-slash form the `prepare` script and the docs
-// tell a consumer to set by hand.
-export const HOOKS_PATH = ".repo-contract/hooks";
-
 // Git skips a hook that is not executable, emitting only a hint. Vendored hooks
-// are written 0755 so activation cannot fail that quietly.
+// are written 0755 so activation cannot fail that quietly. HOOKS_PATH and the
+// `core.hooksPath` reader/writer now live in `../hook-activation.js`, shared with
+// `uninstall` rather than reached across command modules.
 const HOOK_MODE = 0o755;
 
 // Agent-guidance snippet printed to stdout for the operator to paste into their
@@ -110,83 +95,6 @@ function classify(ids) {
       state: current === desired ? OK : DRIFT,
     };
   });
-}
-
-/**
- * Read `core.hooksPath` as it applies to this checkout, or `""` when unset.
- * `git config --get` exits 1 on a missing key, which is not an error here.
- * @param {string} cwd
- * @returns {string}
- */
-function readHooksPath(cwd) {
-  try {
-    return execFileSync("git", ["config", "--get", "core.hooksPath"], {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-  } catch {
-    return "";
-  }
-}
-
-/**
- * Point `core.hooksPath` at the vendored hook directory, so the files `init`
- * just wrote actually run (ADR 0012, ADR 0017). Sets the relative
- * `.repo-contract/hooks`, and repairs any other value, including a legacy
- * `.husky`/`.husky/_` and any absolute path that would make every linked
- * worktree run one fixed checkout's hooks.
- *
- * Reports the outcome as one line, the way the file and label loops do. Outside
- * a git repository there is nothing to configure: say so loudly (the hooks are
- * inert until someone sets it) and leave the exit code alone, since scaffolding
- * into a directory before `git init` is legitimate. A `git config` that fails
- * where a repository *does* exist is fatal: silently leaving enforcement off is
- * the exact failure mode this step exists to remove.
- * @param {object} params
- * @param {string} [params.cwd]
- * @param {(line: string) => void} params.log
- * @returns {string} `skipped`, `ok`, `created`, or `repaired`.
- */
-export function ensureHooksPath({ cwd = process.cwd(), log }) {
-  if (!existsSync(resolve(cwd, ".git"))) {
-    log(
-      `skip     core.hooksPath (no git repository here). The vendored hooks will\n` +
-        `         not run until you set it: git config core.hooksPath ${HOOKS_PATH}`,
-    );
-    return "skipped";
-  }
-
-  const current = readHooksPath(cwd);
-  if (current === HOOKS_PATH) {
-    log(`ok       core.hooksPath=${HOOKS_PATH}`);
-    return "ok";
-  }
-
-  try {
-    execFileSync("git", ["config", "core.hooksPath", HOOKS_PATH], {
-      cwd,
-      stdio: ["ignore", "ignore", "pipe"],
-    });
-  } catch (error) {
-    console.error(
-      `\nerror: could not set core.hooksPath to ${HOOKS_PATH} (${error instanceof Error ? error.message : String(error)}).\n` +
-        "The vendored hooks are on disk but git will not run them, so the commit " +
-        "baseline is NOT enforced in this checkout. Fix the git config, or run " +
-        `\`git config core.hooksPath ${HOOKS_PATH}\` by hand, and re-run init.`,
-    );
-    process.exit(1);
-  }
-
-  if (current === "") {
-    log(`create   core.hooksPath=${HOOKS_PATH}`);
-    return "created";
-  }
-  const why = isAbsolute(current)
-    ? "absolute, so every linked worktree ran this one checkout's hooks"
-    : "did not point at the vendored hooks";
-  log(`repair   core.hooksPath=${HOOKS_PATH} (was '${current}': ${why})`);
-  return "repaired";
 }
 
 /**

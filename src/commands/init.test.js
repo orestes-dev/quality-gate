@@ -11,8 +11,8 @@ import {
   reportProtection,
   findOrphans,
   reportOrphans,
-  HOOKS_PATH,
 } from "./init.js";
+import { HOOKS_PATH } from "../hook-activation.js";
 import { labelsFor, filesFor } from "../scaffolds.js";
 import {
   OVERRIDE_LABEL,

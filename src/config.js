@@ -243,6 +243,37 @@ export function writeScaffolds(ids, cwd = process.cwd()) {
 }
 
 /**
+ * Remove the `scaffolds` key from `.repo-contract.json`, leaving every other key
+ * (notably `overrides`) exactly as it was. This is how `uninstall` records that
+ * the last scaffold is gone: "nothing installed" has one representation, the
+ * absent key, so removing the final scaffold deletes the key rather than writing
+ * `[]` (ADR 0016). It sits beside {@link writeScaffolds} rather than relaxing its
+ * empty-selection guard: that guard is still right, since `[]` is never a valid
+ * manifest to write; this is a different operation, deleting the key entirely.
+ *
+ * An absent file or an already-absent key is a no-op: uninstalling an orphan that
+ * the manifest never recorded must not create or churn the file. The remaining
+ * object is written even when it becomes `{}`, which parses back to the same
+ * empty config a missing file does.
+ * @param {string} [cwd] - Repo root to write to (defaults to `process.cwd()`).
+ * @returns {void}
+ */
+export function removeScaffoldsKey(cwd = process.cwd()) {
+  const path = resolve(cwd, CONFIG_FILENAME);
+  let raw;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (err) {
+    if (err instanceof Error && "code" in err && err.code === "ENOENT") return;
+    throw err;
+  }
+  const data = JSON.parse(raw);
+  if (!isObject(data) || !(SCAFFOLDS_KEY in data)) return;
+  delete data[SCAFFOLDS_KEY];
+  writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`);
+}
+
+/**
  * Look up an enforcement opt-out by key. Returns the Override (value + reason)
  * when the repo opted out of that check, or `undefined` for full enforcement of
  * it. A consumer branches on the return: `undefined` enforces; an Override
