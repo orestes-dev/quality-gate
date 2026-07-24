@@ -8,6 +8,7 @@ import { validate, failures } from "../src/validator.js";
 import { validatePr } from "../src/pr-validator.js";
 import { renderCli, PR_PRESENTATION } from "../src/report.js";
 import { init } from "../src/commands/init.js";
+import { uninstall } from "../src/commands/uninstall.js";
 import { sweep } from "../src/commands/sweep.js";
 import { SCAFFOLDS } from "../src/scaffolds.js";
 import { SelectionError } from "../src/selection.js";
@@ -22,7 +23,7 @@ const SCAFFOLD_HELP = SCAFFOLDS.map(
 
 /** Usage banner shared by the help path (stdout, exit 0) and the unknown-command path (stderr, exit 2). */
 const USAGE =
-  "usage: repo-contract <init|validate-issue|validate-pr|sweep>\n" +
+  "usage: repo-contract <init|uninstall|validate-issue|validate-pr|sweep>\n" +
   "  init [--force] [--only <ids>]\n" +
   "                   install a selected subset of repo-contract's features into\n" +
   "                   this repo, and activate the git hooks if selected\n" +
@@ -37,6 +38,13 @@ const USAGE =
   "                   .repo-contract.json is honoured, or all of them when the\n" +
   "                   repo has no record. init only ever adds: dropping an\n" +
   "                   installed scaffold is `repo-contract uninstall <id>`.\n" +
+  "  uninstall <ids>  remove one or more named scaffolds' footprint: their files,\n" +
+  "                   their entry in the .repo-contract.json manifest, and (for\n" +
+  "                   git-hooks) core.hooksPath when it still holds the managed\n" +
+  "                   value. Remote labels are named as manual cleanup, never\n" +
+  "                   deleted. Scaffold ids (space- or comma-separated):\n" +
+  SCAFFOLD_HELP +
+  "\n" +
   "  validate-issue <file> [--title <title>]  validate an issue body file (exit 1 on hard errors)\n" +
   "  validate-pr <file> [--title <title>]     validate a PR body file (exit 1 on hard errors)\n" +
   "  sweep            backfill labels + scorecards on a repo's open issues";
@@ -100,6 +108,8 @@ async function main() {
   switch (command) {
     case "init":
       return init(rest);
+    case "uninstall":
+      return uninstall(rest);
     case "validate-issue":
       return cmdValidateIssue(rest);
     case "validate-pr":
